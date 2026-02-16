@@ -1,6 +1,7 @@
 # new-api-lite
 
 简易版 new-api：Cloudflare Workers + D1 后端，Vite 静态管理台。
+管理台构建产物通过 Worker Static Assets 与 Worker 一起部署。
 
 ## 目录结构
 
@@ -75,10 +76,17 @@ bun run fix
 
 ## D1 数据库
 
-在 `apps/worker/migrations/0001_init.sql` 定义表结构，使用 Wrangler 迁移：
+在 `apps/worker/migrations/0001_init.sql` 定义表结构，使用 Wrangler 迁移。
+本地开发使用本地数据库，云端部署使用 `--remote`：
 
 ```bash
 bun run --filter new-api-lite-worker db:migrate
+```
+
+云端（Cloudflare D1）请使用：
+
+```bash
+bunx wrangler d1 migrations apply DB --remote
 ```
 
 ## 忘记管理员密码
@@ -89,36 +97,78 @@ bun run --filter new-api-lite-worker db:migrate
 bunx wrangler d1 execute DB --command "DELETE FROM settings WHERE key = 'admin_password_hash';"
 ```
 
-## 生产部署
+## 云端部署（Cloudflare Workers + D1）
 
-### 1) 准备 Cloudflare 资源
+说明：
+- 管理台静态资源来自 `apps/admin/dist`
+- `/api/*` 与 `/v1/*` 会优先走 Worker 逻辑
+- 部署顺序：先构建管理台，再部署 Worker
+- 下述 `wrangler deploy` 与 `--remote` 均为云端部署/迁移（非本地模拟）
 
-1. 创建 D1 数据库并回填 `apps/worker/wrangler.toml` 的 `database_id`：
+### 1) 新建部署
+
+1. 安装依赖：
+
+```bash
+bun install
+```
+
+2. 创建 D1 数据库并回填 `apps/worker/wrangler.toml` 的 `database_id`：
 
 ```bash
 bunx wrangler d1 create new_api_lite
 ```
 
-2. 设置 Worker 变量与密钥（如 CORS_ORIGIN）：
+3. 设置 Worker 变量与密钥（如 CORS_ORIGIN）：
 
 其他变量可继续放在 `apps/worker/wrangler.toml` 的 `[vars]` 中，`CORS_ORIGIN` 需指向管理台域名。
 
-### 2) 执行生产迁移
-
-```bash
-bunx wrangler d1 migrations apply DB
-```
-
-### 3) 部署 Worker
-
-```bash
-bun run --filter new-api-lite-worker deploy
-```
-
-### 4) 构建并部署 Admin
+4. 构建管理台并上传静态资源：
 
 ```bash
 bun run --filter new-api-lite-admin build
 ```
 
-将 `apps/admin/dist` 发布到 Cloudflare Pages 或任意静态托管；如需指定 API 基址，请在构建前设置 `VITE_API_BASE`（例如 `apps/admin/.env.production`）。
+5. 执行远程迁移：
+
+```bash
+bunx wrangler d1 migrations apply DB --remote
+```
+
+6. 部署 Worker：
+
+```bash
+bun run --filter new-api-lite-worker deploy
+```
+
+### 2) 更新前端（仅管理台变更）
+
+```bash
+bun run --filter new-api-lite-admin build
+bun run --filter new-api-lite-worker deploy
+```
+
+### 3) 更新后端（仅 Worker 变更）
+
+```bash
+bun run --filter new-api-lite-worker deploy
+```
+
+### 4) 数据库更新
+
+1. 添加新的迁移文件到 `apps/worker/migrations/`。
+2. 执行远程迁移：
+
+```bash
+bunx wrangler d1 migrations apply DB --remote
+```
+
+### 5) 自动部署（GitHub Actions）
+
+工作流默认在 `main` 分支推送时触发，步骤为：安装依赖 → 构建管理台 → 部署 Worker。
+
+需要在仓库 Secrets 中配置：
+- `CLOUDFLARE_API_TOKEN`：具有 Workers 与 D1 权限的 API Token
+- `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账户 ID（若 token 无法自动识别账户）
+
+确保 `apps/worker/wrangler.toml` 中已填写 `database_id`。

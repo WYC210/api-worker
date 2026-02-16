@@ -10,6 +10,7 @@
 
 ## 行为规范
 - Vite 构建静态文件
+- 构建产物 `apps/admin/dist` 由 Worker Static Assets 托管
 - 使用 `hono/jsx/dom` + TSX 渲染管理台入口
 - 入口文件为 `apps/admin/src/App.tsx`（`main.tsx` 已移除）
 - 按 `core/`（类型/常量/API）、`features/`（业务视图 + 布局/登录）组织前端模块

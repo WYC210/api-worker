@@ -6,6 +6,12 @@
 - **[tooling]**: 修复 bun check 脚本名称（移除尾随空格）
   - 类型: 微调（无方案包）
   - 文件: package.json
+- **[docs]**: 补充云端部署与本地迁移的区分说明
+  - 类型: 微调（无方案包）
+  - 文件: README.md
+- **[ci]**: 自动部署加入远程 D1 迁移步骤
+  - 类型: 微调（无方案包）
+  - 文件: .github/workflows/deploy.yml
 - **[admin-ui]**: 渠道创建移除 ID 字段并校验名称唯一
   - 类型: 微调（无方案包）
   - 文件: apps/admin/src/main.tsx:250-287, 664-829
@@ -54,6 +60,12 @@
 - **[proxy]**: 流式请求自动补 `stream_options.include_usage` 以获取 usage
   - 类型: 微调（无方案包）
   - 文件: apps/worker/src/routes/proxy.ts
+
+## [0.4.2] - 2026-02-16
+
+### 变更
+- **[deployment]**: 管理台通过 Worker Static Assets 部署并补齐手动/自动部署流程
+  - 方案: [202602161013_worker-assets-deploy](archive/2026-02/202602161013_worker-assets-deploy/)
 
 ## [0.4.1] - 2026-02-15
 
