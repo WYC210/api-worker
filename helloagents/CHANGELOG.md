@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 微调
+- **[admin-ui]**: 令牌查看自动复制并提示
+  - 类型: 微调（无方案包）
+  - 文件: apps/ui/src/App.tsx:440-455
 - **[docs]**: 补充本地开发流程、API 接口与 GitHub Actions 自动部署说明
   - 类型: 微调（无方案包）
   - 文件: README.md:12-272
