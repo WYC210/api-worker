@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 微调
+
 - **[admin-ui]**: 处理剪贴板异常时忽略未使用的错误变量
   - 类型: 微调（无方案包）
   - 文件: apps/ui/src/App.tsx:500
@@ -85,15 +86,31 @@
   - 类型: 微调（无方案包）
   - 文件: apps/worker/src/routes/proxy.ts
 
+## [0.4.10] - 2026-02-21
+
+### 变更
+
+- **[ci]**: D1 数据库名称调整为 `api-worker`
+  - 方案: [202602212345_db-name-api-worker](archive/2026-02/202602212345_db-name-api-worker/)
+
+## [0.4.9] - 2026-02-21
+
+### 变更
+
+- **[ci]**: 部署流程新增 init 动作并仅首次初始化
+  - 方案: [202602212329_deploy-init-action](archive/2026-02/202602212329_deploy-init-action/)
+
 ## [0.4.8] - 2026-02-21
 
 ### 变更
+
 - **[ci]**: 部署流程支持按变更范围选择前端/后端并默认按迁移变更执行
   - 方案: [202602211446_deploy-workflow-auto](archive/2026-02/202602211446_deploy-workflow-auto/)
 
 ## [0.4.7] - 2026-02-21
 
 ### 变更
+
 - **[tooling]**: UI 目录从 apps/admin 迁移为 apps/ui 并同步配置
   - 方案: [202602211405_rename-admin-ui](archive/2026-02/202602211405_rename-admin-ui/)
 - **[ci]**: 部署流程改用 apps/ui 与 api-worker-ui
@@ -104,6 +121,7 @@
 ## [0.4.6] - 2026-02-21
 
 ### 变更
+
 - **[tooling]**: 统一工作区包名与脚本为 api-worker / api-worker-ui
   - 方案: [202602161825_rename-api-worker-ui](archive/2026-02/202602161825_rename-api-worker-ui/)
 - **[worker]**: Worker 部署名称更新为 api-worker
@@ -114,12 +132,14 @@
 ## [0.4.5] - 2026-02-16
 
 ### 变更
+
 - **[admin-ui]**: 令牌管理改为列表视图并支持分页弹窗创建
   - 方案: [202602161600_token-list-ui](archive/2026-02/202602161600_token-list-ui/)
 
 ## [0.4.4] - 2026-02-16
 
 ### 修复
+
 - **[admin-ui]**: 使用日志默认每页 50 条并修正本地时间显示
   - 方案: [202602161433_usage-log-fixes](archive/2026-02/202602161433_usage-log-fixes/)
 - **[usage/proxy]**: 使用日志补充首 token 延迟、流式与推理强度记录
@@ -128,18 +148,21 @@
 ## [0.4.3] - 2026-02-16
 
 ### 变更
+
 - **[admin-ui]**: 使用日志支持分页与指标拆分展示
   - 方案: [202602161355_usage-view-metrics](archive/2026-02/202602161355_usage-view-metrics/)
 
 ## [0.4.2] - 2026-02-16
 
 ### 变更
+
 - **[deployment]**: 管理台通过 Worker Static Assets 部署并补齐手动/自动部署流程
   - 方案: [202602161013_worker-assets-deploy](archive/2026-02/202602161013_worker-assets-deploy/)
 
 ## [0.4.1] - 2026-02-15
 
 ### 变更
+
 - **[admin-ui]**: 管理台入口拆分为模块、扁平化 features，并将 AppShell 调整为 AppLayout
   - 方案: [202602152325_admin-ui-modularize](archive/2026-02/202602152325_admin-ui-modularize/)
   - 决策: admin-ui-modularize#D001(功能域拆分)
@@ -147,18 +170,21 @@
 ## [0.4.0] - 2026-02-15
 
 ### 新增
+
 - **[channels]**: New API 标签批量权重/启用/停用接口
   - 方案: [202602152211_newapi-tag-sync](archive/2026-02/202602152211_newapi-tag-sync/)
 
 ## [0.3.1] - 2026-02-15
 
 ### 修复
+
 - **[proxy]**: 增强 usage 解析以修复使用日志与数据面板 token 统计为 0
   - 方案: [202602151843_fix-usage-tokens](archive/2026-02/202602151843_fix-usage-tokens/)
 
 ## [0.3.0] - 2026-02-15
 
 ### 变更
+
 - **[admin-ui]**: 管理台改为 Hono + TSX DOM 渲染并接入 Tailwind v4
   - 方案: [202602151628_admin-ui-hono-tsx-tailwind](archive/2026-02/202602151628_admin-ui-hono-tsx-tailwind/)
   - 决策: admin-ui-hono-tsx-tailwind#D001(采用 Hono JSX DOM + Tailwind)
@@ -166,12 +192,14 @@
 ## [0.2.1] - 2026-02-15
 
 ### 变更
+
 - **[tooling]**: 切换为 Bun 作为包管理器，补充部署说明与 fix 命令
   - 方案: [202602150153_bun-tooling](archive/2026-02/202602150153_bun-tooling/)
 
 ## [0.2.0] - 2026-02-15
 
 ### 新增
+
 - **[channels/auth/models]**: 新增 New API 兼容渠道管理接口、用户模型接口与管理员令牌鉴权
   - 方案: [202602150127_newapi-channel-compat](archive/2026-02/202602150127_newapi-channel-compat/)
   - 决策: newapi-channel-compat#D001(新增兼容层并保留扩展字段)
@@ -179,22 +207,24 @@
 ## [0.1.0] - 2026-02-14
 
 ### 新增
+
 - **[核心服务]**: 初始化 Worker + D1 后端与 Vite 管理台，提供渠道/模型/令牌/日志/面板与 OpenAI 兼容代理
   - 方案: [202602142217_new-api-lite](archive/2026-02/202602142217_new-api-lite/)
   - 决策: new-api-lite#D001(单 Worker + Hono), new-api-lite#D002(Vite + Pages), new-api-lite#D003(Token 默认全渠道), new-api-lite#D004(日志保留可配置)
 
 ### 修复
+
 - **[{模块名}]**: {修复描述}
-  - 方案: [{YYYYMMDDHHMM}_{fix}](archive/{YYYY-MM}/{YYYYMMDDHHMM}_{fix}/)
+  - 方案: [{YYYYMMDDHHMM}\_{fix}](archive/{YYYY-MM}/{YYYYMMDDHHMM}_{fix}/)
 
 ### 微调
+
 - **[{模块名}]**: {微调描述}
   - 类型: 微调（无方案包）
   - 文件: {文件路径}:{行号范围}
 
 ### 回滚
+
 - **[{模块名}]**: 回滚至 {版本/提交}
   - 原因: {回滚原因}
   - 方案: [{原方案包}](archive/{YYYY-MM}/{原方案包}/)
-
-

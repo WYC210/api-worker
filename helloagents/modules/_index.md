@@ -15,6 +15,7 @@
 | dashboard | 数据面板统计 | 🚧 | [dashboard.md](./dashboard.md) |
 | settings | 系统配置 | 🚧 | [settings.md](./settings.md) |
 | admin-ui | 管理台前端 | 🚧 | [admin-ui.md](./admin-ui.md) |
+| deploy-workflow | GitHub Actions 部署流程 | 🚧 | [deploy-workflow.md](./deploy-workflow.md) |
 
 ## 模块依赖关系
 
@@ -24,6 +25,7 @@ proxy → channels, tokens, usage
 dashboard → usage, tokens
 models → channels
 usage → settings
+deploy-workflow → admin-ui, worker
 ```
 
 ## 状态说明

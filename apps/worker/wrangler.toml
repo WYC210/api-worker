@@ -9,7 +9,7 @@ PROXY_RETRY_DELAY_MS = "200"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "new_api_lite"
+database_name = "api-worker"
 database_id = "00000000-0000-0000-0000-000000000000"
 
 [assets]
@@ -17,5 +17,6 @@ directory = "../ui/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = true
+
 
 

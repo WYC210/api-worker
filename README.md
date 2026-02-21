@@ -47,7 +47,7 @@
 - Checkout → 安装 Bun 1.3.9 → `bun install`
 - 构建管理台（`apps/ui/dist`），并校验产物
 - 关闭 wrangler telemetry
-- 创建/校验 D1（`new_api_lite`），在 CI 内写入 `apps/worker/wrangler.toml` 的 `database_id`
+- 创建/校验 D1（`api-worker`），在 CI 内写入 `apps/worker/wrangler.toml` 的 `database_id`
 - 按需执行远程迁移
 - `wrangler deploy` 部署 Worker
 
@@ -86,7 +86,7 @@ bun run dev:worker
 
 - 日志保留天数（默认 30）
 - 会话时长（小时，默认 12）
-- 管理员密码（首次登录自动初始化，可在系统设置中修改）
+- 管理员密码（首次登录在登录页输入密码将自动设置，可在系统设置中修改）
 
 ### 3) 启动管理台 UI
 
@@ -181,3 +181,4 @@ bun run --filter api-worker db:migrate
 - `ALL /v1/*` 转发到渠道 `base_url + 请求路径`
 - 当请求路径为 `/v1/responses` 且上游 400/404 时自动回退到 `/responses`
 - 流式请求会自动补齐 `stream_options.include_usage = true` 以收集用量
+
