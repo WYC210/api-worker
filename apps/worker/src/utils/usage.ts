@@ -76,6 +76,9 @@ export function parseUsageFromJson(payload: unknown): NormalizedUsage | null {
 	const data = payload as Record<string, unknown>;
 	const usage =
 		data.usage ??
+		(data.response && typeof data.response === "object"
+			? (data.response as Record<string, unknown>).usage
+			: null) ??
 		(data.data && typeof data.data === "object"
 			? (data.data as Record<string, unknown>).usage
 			: null);

@@ -89,6 +89,12 @@
   - 类型: 微调（无方案包）
   - 文件: apps/worker/src/routes/proxy.ts
 
+## [0.8.2] - 2026-02-23
+
+### 修复
+- **[proxy]**: Responses 流式 usage 解析支持 `response.usage`
+  - 方案: [202602230044_usage-parse-fix](archive/2026-02/202602230044_usage-parse-fix/)
+
 ## [0.8.1] - 2026-02-23
 
 ### 变更
