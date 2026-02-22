@@ -27,8 +27,8 @@
 ## 行为规范
 - `base_url` 保存为无尾斜杠格式
 - 创建渠道时可传入自定义 `id`，未提供则自动生成
-- 连通性测试调用 `/v1/models`
-- 测试成功后更新 `models_json`
+- 连通性测试会对调用令牌逐个调用 `/v1/models` 并汇总模型
+- 至少一枚令牌测试成功时更新 `models_json` 并返回成功/失败统计
 - New API 兼容层支持 `type`/`group`/`priority` 等字段映射，并保留扩展字段到 `metadata_json`
 - New API 标签（tag）存储在 `metadata_json.tag`，标签接口按该字段批量更新
 - New API 分组列表从 `group_name` 字段解析，空时返回 `default`

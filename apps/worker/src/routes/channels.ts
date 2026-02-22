@@ -8,8 +8,10 @@ import {
 	listChannels,
 	updateChannel,
 } from "../services/channel-repo";
+import { listCallTokens } from "../services/channel-call-token-repo";
+import { modelsToJson } from "../services/channel-models";
 import {
-	fetchChannelModels,
+	testChannelTokens,
 	updateChannelTestResult,
 } from "../services/channel-testing";
 import { generateToken } from "../utils/crypto";
@@ -164,28 +166,49 @@ channels.post("/:id/test", async (c) => {
 		return jsonError(c, 404, "channel_not_found", "channel_not_found");
 	}
 
-	const result = await fetchChannelModels(
-		String(channel.base_url),
-		String(channel.api_key),
-	);
+	const callTokenRows = await listCallTokens(c.env.DB, {
+		channelIds: [id],
+	});
+	const tokens =
+		callTokenRows.length > 0
+			? callTokenRows.map((row) => ({
+					id: row.id,
+					name: row.name,
+					api_key: row.api_key,
+				}))
+			: [
+					{
+						id: "primary",
+						name: "主调用令牌",
+						api_key: String(channel.api_key),
+					},
+				];
 
-	if (!result.ok) {
+	const summary = await testChannelTokens(String(channel.base_url), tokens);
+	if (!summary.ok) {
 		await updateChannelTestResult(c.env.DB, id, {
 			ok: false,
-			elapsed: result.elapsed,
+			elapsed: summary.elapsed,
 		});
 		return jsonError(c, 502, "channel_unreachable", "channel_unreachable");
 	}
 
-	const payload = result.payload ?? { data: [] };
-	const models = Array.isArray(payload) ? payload : (payload?.data ?? []);
+	const models = summary.models.map((id) => ({ id }));
 	await updateChannelTestResult(c.env.DB, id, {
 		ok: true,
-		elapsed: result.elapsed,
-		modelsJson: JSON.stringify(payload),
+		elapsed: summary.elapsed,
+		modelsJson: modelsToJson(summary.models),
 	});
 
-	return c.json({ ok: true, models });
+	return c.json({
+		ok: true,
+		models,
+		token_summary: {
+			total: summary.total,
+			success: summary.success,
+			failed: summary.failed,
+		},
+	});
 });
 
 export default channels;

@@ -89,6 +89,16 @@
   - 类型: 微调（无方案包）
   - 文件: apps/worker/src/routes/proxy.ts
 
+## [0.8.0] - 2026-02-22
+
+### 变更
+- **[channels]**: 连通测试改为遍历调用令牌并汇总模型与结果统计
+  - 方案: [202602222335_multi-token-test-checkin-default-off](archive/2026-02/202602222335_multi-token-test-checkin-default-off/)
+- **[admin-ui]**: 新增站点默认关闭自动签到，连通测试提示令牌统计
+  - 方案: [202602222335_multi-token-test-checkin-default-off](archive/2026-02/202602222335_multi-token-test-checkin-default-off/)
+- **[tests]**: 新增多令牌连通测试聚合单测
+  - 方案: [202602222335_multi-token-test-checkin-default-off](archive/2026-02/202602222335_multi-token-test-checkin-default-off/)
+
 ### 修复
 
 - **[checkin]**: 签到结果增加二次校验与非 JSON 响应判定

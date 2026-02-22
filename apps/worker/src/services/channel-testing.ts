@@ -10,6 +10,30 @@ export type ChannelTestResult = {
 	payload?: unknown[] | { data?: unknown[] };
 };
 
+export type ChannelToken = {
+	id?: string;
+	name?: string;
+	api_key: string;
+};
+
+export type ChannelTokenTestItem = {
+	tokenId?: string;
+	tokenName?: string;
+	ok: boolean;
+	elapsed: number;
+	models: string[];
+};
+
+export type ChannelTokenTestSummary = {
+	ok: boolean;
+	total: number;
+	success: number;
+	failed: number;
+	elapsed: number;
+	models: string[];
+	items: ChannelTokenTestItem[];
+};
+
 export async function fetchChannelModels(
 	baseUrl: string,
 	apiKey: string,
@@ -37,6 +61,75 @@ export async function fetchChannelModels(
 		Array.isArray(payload) ? payload : (payload.data ?? payload),
 	);
 	return { ok: true, elapsed, models, payload };
+}
+
+/**
+ * Tests channel models with multiple API keys and aggregates results.
+ *
+ * Args:
+ *   baseUrl: Upstream base URL.
+ *   tokens: List of call tokens to test.
+ *   fetcher: Optional fetcher override for tests.
+ *
+ * Returns:
+ *   Summary of token test results and aggregated model IDs.
+ */
+export async function testChannelTokens(
+	baseUrl: string,
+	tokens: ChannelToken[],
+	fetcher: (
+		baseUrl: string,
+		apiKey: string,
+	) => Promise<ChannelTestResult> = fetchChannelModels,
+): Promise<ChannelTokenTestSummary> {
+	if (tokens.length === 0) {
+		return {
+			ok: false,
+			total: 0,
+			success: 0,
+			failed: 0,
+			elapsed: 0,
+			models: [],
+			items: [],
+		};
+	}
+
+	const items: ChannelTokenTestItem[] = [];
+	const modelSet = new Set<string>();
+	let success = 0;
+	let totalElapsed = 0;
+
+	for (const token of tokens) {
+		const result = await fetcher(baseUrl, token.api_key);
+		totalElapsed += result.elapsed;
+		if (result.ok) {
+			success += 1;
+			for (const model of result.models) {
+				modelSet.add(model);
+			}
+		}
+		items.push({
+			tokenId: token.id,
+			tokenName: token.name,
+			ok: result.ok,
+			elapsed: result.elapsed,
+			models: result.models,
+		});
+	}
+
+	const total = tokens.length;
+	const failed = total - success;
+	const elapsed = Math.round(totalElapsed / total);
+
+	return {
+		ok: success > 0,
+		total,
+		success,
+		failed,
+		elapsed,
+		models: Array.from(modelSet),
+		items,
+	};
 }
 
 export async function updateChannelTestResult(

@@ -507,14 +507,25 @@ const App = () => {
 	const handleSiteTest = useCallback(
 		async (id: string) => {
 			try {
-				const result = await apiFetch<{ models: Array<{ id: string }> }>(
-					`/api/channels/${id}/test`,
-					{
-						method: "POST",
-					},
-				);
+				const result = await apiFetch<{
+					models: Array<{ id: string }>;
+					token_summary?: {
+						total: number;
+						success: number;
+						failed: number;
+					};
+				}>(`/api/channels/${id}/test`, {
+					method: "POST",
+				});
 				await loadSites();
-				setNotice(`连通测试完成，模型数 ${result.models?.length ?? 0}`);
+				const modelCount = result.models?.length ?? 0;
+				const summary = result.token_summary;
+				const detail = summary
+					? `，令牌成功 ${summary.success}/${summary.total}${
+							summary.failed > 0 ? `，失败 ${summary.failed}` : ""
+						}`
+					: "";
+				setNotice(`连通测试完成，模型数 ${modelCount}${detail}`);
 			} catch (error) {
 				setNotice((error as Error).message);
 			}

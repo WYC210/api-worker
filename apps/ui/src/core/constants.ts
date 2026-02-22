@@ -29,7 +29,7 @@ export const initialSiteForm: SiteForm = {
 	checkin_url: "",
 	system_token: "",
 	system_userid: "",
-	checkin_enabled: true,
+	checkin_enabled: false,
 	call_tokens: [
 		{
 			name: "主调用令牌",
