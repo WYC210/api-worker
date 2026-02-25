@@ -37,6 +37,7 @@ type SitesViewProps = {
 	onSortChange: (next: SiteSortState) => void;
 	onFormChange: (patch: Partial<SiteForm>) => void;
 	onRunAll: () => void;
+	onTestAll: () => void;
 };
 
 const pageSizeOptions = [10, 20, 50];
@@ -76,6 +77,7 @@ export const SitesView = ({
 	onSortChange,
 	onFormChange,
 	onRunAll,
+	onTestAll,
 }: SitesViewProps) => {
 	const isEditing = Boolean(editingSite);
 	const pageItems = buildPageItems(sitePage, siteTotalPages);
@@ -155,6 +157,13 @@ export const SitesView = ({
 							onClick={onRunAll}
 						>
 							一键签到
+						</button>
+						<button
+							class="h-9 rounded-full border border-stone-200 bg-stone-100 px-4 text-xs font-semibold text-stone-700 transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+							type="button"
+							onClick={onTestAll}
+						>
+							一键测试
 						</button>
 						<button
 							class="h-9 rounded-full bg-stone-900 px-4 text-xs font-semibold text-white transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white"

@@ -16,7 +16,9 @@ import {
 import {
 	filterSites,
 	sortSites,
+	summarizeSiteTests,
 	type SiteSortState,
+	type SiteTestResult,
 } from "./core/sites";
 import type {
 	AdminData,
@@ -547,6 +549,44 @@ const App = () => {
 		[apiFetch, loadSites],
 	);
 
+	const handleSiteTestAll = useCallback(async () => {
+		if (data.sites.length === 0) {
+			setNotice("暂无站点可测试");
+			return;
+		}
+		setNotice("正在执行一键测试...");
+		const results: SiteTestResult[] = [];
+		for (const site of data.sites) {
+			if (site.status !== "active") {
+				results.push({ status: "skipped" });
+				continue;
+			}
+			try {
+				await apiFetch(`/api/channels/${site.id}/test`, {
+					method: "POST",
+				});
+				results.push({ status: "success" });
+			} catch (_error) {
+				results.push({ status: "failed" });
+			}
+		}
+		await loadSites();
+		const summary = summarizeSiteTests(results);
+		const testedTotal = summary.success + summary.failed;
+		if (testedTotal === 0) {
+			setNotice(`已跳过 ${summary.skipped} 个禁用站点，暂无可测试站点。`);
+			return;
+		}
+		let message =
+			summary.failed > 0
+				? `一键测试完成，成功 ${summary.success}/${testedTotal}，失败 ${summary.failed}。`
+				: `一键测试完成，成功 ${summary.success}/${testedTotal}。`;
+		if (summary.skipped > 0) {
+			message += ` 已跳过 ${summary.skipped} 个禁用站点。`;
+		}
+		setNotice(message);
+	}, [apiFetch, data.sites, loadSites]);
+
 	const handleSiteDelete = useCallback(
 		async (id: string) => {
 			try {
@@ -753,6 +793,7 @@ const App = () => {
 					onSortChange={handleSiteSortChange}
 					onFormChange={handleSiteFormChange}
 					onRunAll={handleCheckinRunAll}
+					onTestAll={handleSiteTestAll}
 				/>
 			);
 		}

@@ -4,6 +4,9 @@
 
 ### 微调
 
+- **[admin-ui]**: 站点管理新增一键测试并汇总结果提示
+  - 类型: 微调（无方案包）
+  - 文件: apps/ui/src/App.tsx, apps/ui/src/features/SitesView.tsx, apps/ui/src/core/sites.ts, tests/ui/sites.test.ts
 - **[admin-ui]**: 编辑站点时站点类型/状态选择与当前值一致
   - 类型: 微调（无方案包）
   - 文件: apps/ui/src/features/SitesView.tsx:567-689

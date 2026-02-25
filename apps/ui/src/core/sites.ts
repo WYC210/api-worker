@@ -17,6 +17,19 @@ export type SiteSortState = {
 	direction: SiteSortDirection;
 };
 
+export type SiteTestStatus = "success" | "failed" | "skipped";
+
+export type SiteTestResult = {
+	status: SiteTestStatus;
+};
+
+export type SiteTestSummary = {
+	total: number;
+	success: number;
+	failed: number;
+	skipped: number;
+};
+
 export const SITE_TYPE_LABELS: Record<Site["site_type"], string> = {
 	"new-api": "New API",
 	"done-hub": "Done Hub",
@@ -31,6 +44,30 @@ export const getSiteTypeLabel = (siteType: Site["site_type"]) =>
 
 export const getSiteStatusLabel = (status: string) =>
 	status === "active" ? "启用" : "禁用";
+
+export const summarizeSiteTests = (
+	results: SiteTestResult[],
+): SiteTestSummary => {
+	return results.reduce(
+		(acc, item) => {
+			acc.total += 1;
+			if (item.status === "success") {
+				acc.success += 1;
+			} else if (item.status === "failed") {
+				acc.failed += 1;
+			} else {
+				acc.skipped += 1;
+			}
+			return acc;
+		},
+		{
+			total: 0,
+			success: 0,
+			failed: 0,
+			skipped: 0,
+		} as SiteTestSummary,
+	);
+};
 
 export const getSiteCheckinLabel = (site: Site, today?: string) => {
 	const shouldShow =
