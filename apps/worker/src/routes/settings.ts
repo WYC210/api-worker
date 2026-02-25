@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
 import {
+	getCheckinSchedulerStub,
+	shouldResetLastRun,
+} from "../services/checkin-scheduler";
+import {
 	getCheckinScheduleTime,
 	getRetentionDays,
 	getSessionTtlHours,
@@ -10,10 +14,6 @@ import {
 	setRetentionDays,
 	setSessionTtlHours,
 } from "../services/settings";
-import {
-	getCheckinSchedulerStub,
-	shouldResetLastRun,
-} from "../services/checkin-scheduler";
 import { sha256Hex } from "../utils/crypto";
 import { jsonError } from "../utils/http";
 

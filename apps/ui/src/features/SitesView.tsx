@@ -1,10 +1,10 @@
-import type { CheckinSummary, Site, SiteForm } from "../core/types";
 import {
 	getSiteCheckinLabel,
 	getSiteTypeLabel,
 	type SiteSortKey,
 	type SiteSortState,
 } from "../core/sites";
+import type { CheckinSummary, Site, SiteForm } from "../core/types";
 import {
 	buildPageItems,
 	formatDateTime,
@@ -182,9 +182,7 @@ export const SitesView = ({
 							placeholder="站点名称或 URL"
 							value={siteSearch}
 							onInput={(event) =>
-								onSearchChange(
-									(event.currentTarget as HTMLInputElement).value,
-								)
+								onSearchChange((event.currentTarget as HTMLInputElement).value)
 							}
 						/>
 					</label>
@@ -219,10 +217,6 @@ export const SitesView = ({
 								const systemReady = Boolean(
 									site.system_token && site.system_userid,
 								);
-								const checkinEnabled =
-									site.site_type === "new-api" && Boolean(site.checkin_enabled);
-								const showCheckin =
-									site.site_type === "new-api" && checkinEnabled;
 								const callTokenCount = site.call_tokens?.length ?? 0;
 								return (
 									<div
@@ -252,12 +246,12 @@ export const SitesView = ({
 												{isActive ? "启用" : "禁用"}
 											</span>
 										</div>
-											<div class="mt-3 flex items-center justify-between text-xs text-stone-500">
-												<span>类型</span>
-												<span class="font-semibold text-stone-700">
-													{getSiteTypeLabel(site.site_type)}
-												</span>
-											</div>
+										<div class="mt-3 flex items-center justify-between text-xs text-stone-500">
+											<span>类型</span>
+											<span class="font-semibold text-stone-700">
+												{getSiteTypeLabel(site.site_type)}
+											</span>
+										</div>
 										<div class="mt-3 flex items-center justify-between text-xs text-stone-500">
 											<span>权重</span>
 											<span class="font-semibold text-stone-700">
@@ -290,11 +284,13 @@ export const SitesView = ({
 												<p class="mt-1 font-semibold text-stone-700">
 													{getSiteCheckinLabel(site, today)}
 												</p>
-												{message && showCheckin && (
-													<p class="mt-1 truncate text-[11px] text-stone-500">
-														{message}
-													</p>
-												)}
+												{message &&
+													site.site_type === "new-api" &&
+													site.checkin_enabled && (
+														<p class="mt-1 truncate text-[11px] text-stone-500">
+															{message}
+														</p>
+													)}
 											</div>
 										</div>
 										<div class="mt-3 grid grid-cols-2 gap-2">
@@ -342,9 +338,7 @@ export const SitesView = ({
 										onClick={() => toggleSort(column.key)}
 									>
 										{column.label}
-										<span class="text-[10px]">
-											{sortIndicator(column.key)}
-										</span>
+										<span class="text-[10px]">{sortIndicator(column.key)}</span>
 									</button>
 								</div>
 							))}
@@ -358,12 +352,6 @@ export const SitesView = ({
 							<div class="divide-y divide-stone-100">
 								{pagedSites.map((site) => {
 									const isActive = site.status === "active";
-									const isToday = site.last_checkin_date === today;
-									const checkinEnabled =
-										site.site_type === "new-api" &&
-										Boolean(site.checkin_enabled);
-									const showCheckin =
-										site.site_type === "new-api" && checkinEnabled;
 									const callTokenCount = site.call_tokens?.length ?? 0;
 									return (
 										<div
@@ -406,7 +394,11 @@ export const SitesView = ({
 												{callTokenCount > 0 ? `${callTokenCount} 个` : "-"}
 											</div>
 											<div class="text-xs text-stone-600">
-												{site.site_type === "new-api" ? (site.checkin_enabled ? "已开启" : "已关闭") : "-"}
+												{site.site_type === "new-api"
+													? site.checkin_enabled
+														? "已开启"
+														: "已关闭"
+													: "-"}
 											</div>
 											<div class="text-xs text-stone-600">
 												{getSiteCheckinLabel(site, today)}
@@ -802,8 +794,18 @@ export const SitesView = ({
 													})
 												}
 											>
-												<option value="disabled" selected={!siteForm.checkin_enabled}>自动签到关闭</option>
-												<option value="enabled" selected={siteForm.checkin_enabled}>自动签到开启</option>
+												<option
+													value="disabled"
+													selected={!siteForm.checkin_enabled}
+												>
+													自动签到关闭
+												</option>
+												<option
+													value="enabled"
+													selected={siteForm.checkin_enabled}
+												>
+													自动签到开启
+												</option>
 											</select>
 										)}
 										<input

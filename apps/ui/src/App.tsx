@@ -15,10 +15,10 @@ import {
 } from "./core/constants";
 import {
 	filterSites,
-	sortSites,
-	summarizeSiteTests,
 	type SiteSortState,
 	type SiteTestResult,
+	sortSites,
+	summarizeSiteTests,
 } from "./core/sites";
 import type {
 	AdminData,
@@ -464,10 +464,10 @@ const App = () => {
 			event.preventDefault();
 			const form = event.currentTarget as HTMLFormElement;
 			const formData = new FormData(form);
-			const payload = Object.fromEntries(formData.entries()) as Record<
-				string,
-				FormDataEntryValue
-			>;
+			const payload: Record<string, FormDataEntryValue> = {};
+			formData.forEach((value, key) => {
+				payload[key] = value;
+			});
 			try {
 				const result = await apiFetch<{ token: string }>("/api/tokens", {
 					method: "POST",

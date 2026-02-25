@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
+import { listCallTokens } from "../services/channel-call-token-repo";
+import { modelsToJson } from "../services/channel-models";
 import {
 	channelExists,
 	deleteChannel,
@@ -8,8 +10,6 @@ import {
 	listChannels,
 	updateChannel,
 } from "../services/channel-repo";
-import { listCallTokens } from "../services/channel-call-token-repo";
-import { modelsToJson } from "../services/channel-models";
 import {
 	testChannelTokens,
 	updateChannelTestResult,

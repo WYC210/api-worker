@@ -3,13 +3,13 @@ import type {
 	DurableObjectState,
 } from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
-import { getCheckinScheduleTime } from "./settings";
-import { runCheckinAll } from "./checkin-runner";
 import {
 	beijingDateString,
 	computeBeijingScheduleTime,
 	computeNextBeijingRun,
 } from "../utils/time";
+import { runCheckinAll } from "./checkin-runner";
+import { getCheckinScheduleTime } from "./settings";
 
 const SCHEDULER_NAME = "checkin-scheduler";
 const LAST_RUN_DATE_KEY = "last_run_date";
@@ -30,10 +30,8 @@ export const shouldRunCheckin = (
 	return now.getTime() >= scheduledAt.getTime();
 };
 
-export const shouldResetLastRun = (
-	currentTime: string,
-	nextTime: string,
-) => currentTime !== nextTime;
+export const shouldResetLastRun = (currentTime: string, nextTime: string) =>
+	currentTime !== nextTime;
 
 export const computeNextAlarmAt = (
 	now: Date,

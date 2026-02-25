@@ -1,13 +1,13 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { beijingDateString } from "../utils/time";
 import { listChannels, updateChannelCheckinResult } from "./channel-repo";
 import {
-	runCheckin,
-	summarizeCheckin,
 	type CheckinResultItem,
 	type CheckinSummary,
+	runCheckin,
+	summarizeCheckin,
 } from "./checkin";
 import { parseSiteMetadata } from "./site-metadata";
-import { beijingDateString } from "../utils/time";
 
 export type CheckinRunResult = {
 	results: CheckinResultItem[];

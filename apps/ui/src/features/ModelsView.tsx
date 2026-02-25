@@ -1,7 +1,7 @@
 import type { ModelItem } from "../core/types";
 
 type ModelsViewProps = {
-  models: ModelItem[];
+	models: ModelItem[];
 };
 
 /**
@@ -14,43 +14,40 @@ type ModelsViewProps = {
  *   Models JSX element.
  */
 export const ModelsView = ({ models }: ModelsViewProps) => (
-  <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-lg">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="mb-0 font-['Space_Grotesk'] text-lg tracking-tight text-stone-900">
-        模型广场
-      </h3>
-      <span class="rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-500">
-        {models.length} 个模型
-      </span>
-    </div>
-    <div class="overflow-x-auto">
-      <table class="min-w-105 w-full border-collapse text-xs sm:text-sm">
-        <thead>
-          <tr>
-            <th class="border-b border-stone-200 px-3 py-2.5 text-left text-[10px] uppercase tracking-widest text-stone-500 sm:text-xs">
-              模型
-            </th>
-            <th class="border-b border-stone-200 px-3 py-2.5 text-left text-[10px] uppercase tracking-widest text-stone-500 sm:text-xs">
-              渠道
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((model) => (
-            <tr
-              class="hover:bg-stone-50"
-              key={model.id}
-            >
-              <td class="border-b border-stone-200 px-3 py-2.5 text-left text-xs text-stone-700 sm:text-sm">
-                {model.id}
-              </td>
-              <td class="border-b border-stone-200 px-3 py-2.5 text-left text-xs text-stone-700 sm:text-sm">
-                {model.channels.map((channel) => channel.name).join(" / ")}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </div>
+	<div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-lg">
+		<div class="mb-4 flex items-center justify-between">
+			<h3 class="mb-0 font-['Space_Grotesk'] text-lg tracking-tight text-stone-900">
+				模型广场
+			</h3>
+			<span class="rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-500">
+				{models.length} 个模型
+			</span>
+		</div>
+		<div class="overflow-x-auto">
+			<table class="min-w-105 w-full border-collapse text-xs sm:text-sm">
+				<thead>
+					<tr>
+						<th class="border-b border-stone-200 px-3 py-2.5 text-left text-[10px] uppercase tracking-widest text-stone-500 sm:text-xs">
+							模型
+						</th>
+						<th class="border-b border-stone-200 px-3 py-2.5 text-left text-[10px] uppercase tracking-widest text-stone-500 sm:text-xs">
+							渠道
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{models.map((model) => (
+						<tr class="hover:bg-stone-50" key={model.id}>
+							<td class="border-b border-stone-200 px-3 py-2.5 text-left text-xs text-stone-700 sm:text-sm">
+								{model.id}
+							</td>
+							<td class="border-b border-stone-200 px-3 py-2.5 text-left text-xs text-stone-700 sm:text-sm">
+								{model.channels.map((channel) => channel.name).join(" / ")}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	</div>
 );

@@ -117,7 +117,11 @@ const getSortValue = (site: Site, key: SiteSortKey, today: string) => {
 		case "tokens":
 			return Number(site.call_tokens?.length ?? 0);
 		case "checkin_enabled":
-			return site.site_type === "new-api" ? (site.checkin_enabled ? "已开启" : "已关闭") : "-";
+			return site.site_type === "new-api"
+				? site.checkin_enabled
+					? "已开启"
+					: "已关闭"
+				: "-";
 		case "checkin":
 			return getSiteCheckinLabel(site, today);
 		default:

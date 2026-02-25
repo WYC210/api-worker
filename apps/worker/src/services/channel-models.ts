@@ -26,7 +26,9 @@ export function normalizeModelsInput(input: unknown): string[] {
 		return [];
 	}
 	if (Array.isArray(input)) {
-		return input.map((item) => toModelId(item)).filter((item) => item.length > 0);
+		return input
+			.map((item) => toModelId(item))
+			.filter((item) => item.length > 0);
 	}
 	if (typeof input === "string") {
 		return input

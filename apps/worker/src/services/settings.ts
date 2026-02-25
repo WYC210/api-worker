@@ -112,9 +112,7 @@ export async function isAdminPasswordSet(db: D1Database): Promise<boolean> {
 	return Boolean(hash);
 }
 
-export async function getCheckinScheduleTime(
-	db: D1Database,
-): Promise<string> {
+export async function getCheckinScheduleTime(db: D1Database): Promise<string> {
 	const timeRaw = await readSetting(db, CHECKIN_SCHEDULE_TIME_KEY);
 	return timeRaw && timeRaw.length > 0
 		? timeRaw

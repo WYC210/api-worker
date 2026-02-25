@@ -28,7 +28,9 @@ export function beijingDateString(date: Date = new Date()): string {
 	return `${year}-${month}-${day}`;
 }
 
-export function parseScheduleTime(value: string): { hour: number; minute: number } | null {
+export function parseScheduleTime(
+	value: string,
+): { hour: number; minute: number } | null {
 	if (!/^\d{2}:\d{2}$/.test(value)) {
 		return null;
 	}
@@ -57,8 +59,13 @@ export function getBeijingDateParts(date: Date = new Date()) {
 	};
 }
 
+const DEFAULT_SCHEDULE_PARTS = parseScheduleTime(DEFAULT_SCHEDULE_TIME) ?? {
+	hour: 0,
+	minute: 10,
+};
+
 const resolveScheduleParts = (value: string) =>
-	parseScheduleTime(value) ?? parseScheduleTime(DEFAULT_SCHEDULE_TIME)!;
+	parseScheduleTime(value) ?? DEFAULT_SCHEDULE_PARTS;
 
 export function computeBeijingScheduleTime(
 	now: Date,
@@ -71,10 +78,7 @@ export function computeBeijingScheduleTime(
 	return new Date(utcMs);
 }
 
-export function computeNextBeijingRun(
-	now: Date,
-	scheduleTime: string,
-): Date {
+export function computeNextBeijingRun(now: Date, scheduleTime: string): Date {
 	const scheduled = computeBeijingScheduleTime(now, scheduleTime);
 	if (now.getTime() < scheduled.getTime()) {
 		return scheduled;

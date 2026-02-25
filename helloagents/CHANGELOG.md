@@ -4,6 +4,15 @@
 
 ### 微调
 
+- **[admin-ui]**: 令牌创建表单使用 FormData.forEach 以兼容缺少 entries 的类型定义
+  - 类型: 微调（无方案包）
+  - 文件: apps/ui/src/App.tsx
+- **[admin-ui]**: 清理站点列表未使用变量以通过 lint
+  - 类型: 微调（无方案包）
+  - 文件: apps/ui/src/features/SitesView.tsx
+- **[worker]**: 时间工具函数移除非空断言以满足 lint
+  - 类型: 微调（无方案包）
+  - 文件: apps/worker/src/utils/time.ts
 - **[admin-ui]**: 站点管理新增一键测试并汇总结果提示
   - 类型: 微调（无方案包）
   - 文件: apps/ui/src/App.tsx, apps/ui/src/features/SitesView.tsx, apps/ui/src/core/sites.ts, tests/ui/sites.test.ts
