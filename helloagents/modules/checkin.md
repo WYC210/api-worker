@@ -16,8 +16,8 @@
 - `checkin_sites` CRUD 接口已移除，签到字段统一由 `channels` 承载
 - 一键签到会跳过 `last_checkin_date` 已是北京时间当日且状态为成功/已签的站点
 - 定时签到由 `CheckinScheduler` Durable Object 触发，每天最多执行一次
-- 定时签到在 `settings.checkin_schedule_enabled=true` 且到达设定时间时执行
-- 当签到时间或开关变更且已到新时间时，允许当日再次执行一次
+- 定时签到始终启用，仅按 `settings.checkin_schedule_time` 到点执行
+- 当签到时间变更且已到新时间时，允许当日再次执行一次
 - 手动签到优先打开 `checkin_url`，为空则打开 `base_url`
 - 签到执行使用 `checkin_url`（若为空则回退 `base_url`）拼接 `/api/user/checkin`
 - 请求头必须携带 `New-Api-User`（值来自站点的 `userid` 配置）
@@ -26,4 +26,4 @@
 ## 依赖关系
 - `worker` 路由与 D1 数据表 `channels`
 - `admin-ui` 负责前端交互与结果展示
-- `settings` 模块提供签到时间与开关配置
+- `settings` 模块提供签到时间配置

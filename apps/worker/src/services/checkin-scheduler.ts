@@ -3,7 +3,7 @@ import type {
 	DurableObjectState,
 } from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
-import { getCheckinSchedule } from "./settings";
+import { getCheckinScheduleTime } from "./settings";
 import { runCheckinAll } from "./checkin-runner";
 import {
 	beijingDateString,
@@ -31,17 +31,9 @@ export const shouldRunCheckin = (
 };
 
 export const shouldResetLastRun = (
-	current: { enabled: boolean; time: string },
-	next: { enabled: boolean; time: string },
-) => {
-	if (!next.enabled) {
-		return false;
-	}
-	if (current.enabled !== next.enabled) {
-		return next.enabled;
-	}
-	return current.time !== next.time;
-};
+	currentTime: string,
+	nextTime: string,
+) => currentTime !== nextTime;
 
 export const computeNextAlarmAt = (
 	now: Date,
@@ -59,7 +51,6 @@ export const computeNextAlarmAt = (
 };
 
 type RescheduleResult = {
-	enabled: boolean;
 	nextRunAt: string | null;
 };
 
@@ -107,14 +98,10 @@ export class CheckinScheduler {
 
 	private async handleAlarm(): Promise<void> {
 		const now = new Date();
-		const schedule = await getCheckinSchedule(this.env.DB);
-		if (!schedule.enabled) {
-			await this.state.storage.deleteAlarm();
-			return;
-		}
+		const scheduleTime = await getCheckinScheduleTime(this.env.DB);
 		const lastRunDate =
 			(await this.state.storage.get<string>(LAST_RUN_DATE_KEY)) ?? null;
-		if (shouldRunCheckin(now, schedule.time, lastRunDate)) {
+		if (shouldRunCheckin(now, scheduleTime, lastRunDate)) {
 			await runCheckinAll(this.env.DB, now);
 			await this.state.storage.put(LAST_RUN_DATE_KEY, beijingDateString(now));
 		}
@@ -125,16 +112,12 @@ export class CheckinScheduler {
 		now: Date = new Date(),
 		reset = false,
 	): Promise<RescheduleResult> {
-		const schedule = await getCheckinSchedule(this.env.DB);
-		if (!schedule.enabled) {
-			await this.state.storage.deleteAlarm();
-			return { enabled: false, nextRunAt: null };
-		}
+		const scheduleTime = await getCheckinScheduleTime(this.env.DB);
 		if (reset) {
 			await this.state.storage.delete(LAST_RUN_DATE_KEY);
 		}
-		const nextRun = computeNextAlarmAt(now, schedule.time, reset);
+		const nextRun = computeNextAlarmAt(now, scheduleTime, reset);
 		await this.state.storage.setAlarm(nextRun.getTime());
-		return { enabled: true, nextRunAt: nextRun.toISOString() };
+		return { nextRunAt: nextRun.toISOString() };
 	}
 }

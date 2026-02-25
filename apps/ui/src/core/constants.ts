@@ -42,6 +42,5 @@ export const initialSettingsForm: SettingsForm = {
 	log_retention_days: "30",
 	session_ttl_hours: "12",
 	admin_password: "",
-	checkin_schedule_enabled: false,
 	checkin_schedule_time: "00:10",
 };

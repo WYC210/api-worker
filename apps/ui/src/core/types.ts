@@ -80,7 +80,6 @@ export type Settings = {
 	log_retention_days: number;
 	session_ttl_hours: number;
 	admin_password_set?: boolean;
-	checkin_schedule_enabled?: boolean;
 	checkin_schedule_time?: string;
 };
 
@@ -139,7 +138,6 @@ export type SettingsForm = {
 	log_retention_days: string;
 	session_ttl_hours: string;
 	admin_password: string;
-	checkin_schedule_enabled: boolean;
 	checkin_schedule_time: string;
 };
 

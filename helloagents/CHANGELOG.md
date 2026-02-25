@@ -89,6 +89,14 @@
   - 类型: 微调（无方案包）
   - 文件: apps/worker/src/routes/proxy.ts
 
+## [0.8.4] - 2026-02-25
+
+### 变更
+- **[checkin/settings]**: 定时签到改为始终启用，仅保留签到时间配置
+  - 方案: [202602251706_checkin-always-on](archive/2026-02/202602251706_checkin-always-on/)
+- **[admin-ui]**: 设置页移除定时签到启用开关
+  - 方案: [202602251706_checkin-always-on](archive/2026-02/202602251706_checkin-always-on/)
+
 ## [0.8.3] - 2026-02-25
 
 ### 修复

@@ -231,9 +231,6 @@ const App = () => {
 			log_retention_days: String(data.settings.log_retention_days ?? 30),
 			session_ttl_hours: String(data.settings.session_ttl_hours ?? 12),
 			admin_password: "",
-			checkin_schedule_enabled: Boolean(
-				data.settings.checkin_schedule_enabled ?? false,
-			),
 			checkin_schedule_time: data.settings.checkin_schedule_time ?? "00:10",
 		});
 	}, [data.settings]);
@@ -499,7 +496,6 @@ const App = () => {
 			const payload: Record<string, number | string | boolean> = {
 				log_retention_days: retention,
 				session_ttl_hours: sessionTtlHours,
-				checkin_schedule_enabled: settingsForm.checkin_schedule_enabled,
 				checkin_schedule_time:
 					settingsForm.checkin_schedule_time.trim() || "00:10",
 			};
