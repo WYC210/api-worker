@@ -84,7 +84,7 @@ export const SitesView = ({
 	const today = getBeijingDateString();
 	const isOfficialType =
 		siteForm.site_type === "openai" ||
-		siteForm.site_type === "claude" ||
+		siteForm.site_type === "anthropic" ||
 		siteForm.site_type === "gemini";
 	const needsSystemToken = !isOfficialType;
 	const isNewApi = siteForm.site_type === "new-api";
@@ -599,10 +599,10 @@ export const SitesView = ({
 											openai
 										</option>
 										<option
-											value="claude"
-											selected={siteForm.site_type === "claude"}
+											value="anthropic"
+											selected={siteForm.site_type === "anthropic"}
 										>
-											claude
+											Anthropic
 										</option>
 										<option
 											value="gemini"

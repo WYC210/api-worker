@@ -32,7 +32,7 @@
 - New API 兼容层支持 `type`/`group`/`priority` 等字段映射，并保留扩展字段到 `metadata_json`
 - New API 标签（tag）存储在 `metadata_json.tag`，标签接口按该字段批量更新
 - New API 分组列表从 `group_name` 字段解析，空时返回 `default`
-- 站点类型写入 `metadata_json.site_type`（new-api / done-hub / subapi / openai / claude / gemini）
+- 站点类型写入 `metadata_json.site_type`（new-api / done-hub / subapi / openai / Anthropic / gemini）
 - done-hub 仅使用 `base_url`，不再维护多地址配置
 
 ## 依赖关系

@@ -7,10 +7,32 @@ import {
 } from "../services/call-token-selector";
 import { listCallTokens } from "../services/channel-call-token-repo";
 import {
+	parseChannelMetadata,
+	resolveMappedModel,
+	resolveProvider,
+} from "../services/channel-metadata";
+import {
 	type ChannelRecord,
 	createWeightedOrder,
 	extractModels,
 } from "../services/channels";
+import {
+	applyGeminiModelToPath,
+	buildUpstreamChatRequest,
+	buildUpstreamEmbeddingRequest,
+	buildUpstreamImageRequest,
+	detectDownstreamProvider,
+	detectEndpointType,
+	type NormalizedChatRequest,
+	type NormalizedEmbeddingRequest,
+	type NormalizedImageRequest,
+	normalizeChatRequest,
+	normalizeEmbeddingRequest,
+	normalizeImageRequest,
+	type ProviderType,
+	parseDownstreamModel,
+	parseDownstreamStream,
+} from "../services/provider-transform";
 import { recordUsage } from "../services/usage";
 import { jsonError } from "../utils/http";
 import { safeJsonParse } from "../utils/json";
@@ -37,7 +59,11 @@ function channelSupportsModel(
 		return true;
 	}
 	const models = extractModels(channel);
-	return models.some((entry) => entry.id === model);
+	if (models.some((entry) => entry.id === model)) {
+		return true;
+	}
+	const metadata = parseChannelMetadata(channel.metadata_json);
+	return Boolean(metadata.model_mapping[model] ?? metadata.model_mapping["*"]);
 }
 
 function filterAllowedChannels(
@@ -88,38 +114,122 @@ function resolveChannelBaseUrl(channel: ChannelRecord): string {
 	return normalizeBaseUrl(channel.base_url);
 }
 
+function mergeQuery(
+	base: string,
+	querySuffix: string,
+	overrides: Record<string, string>,
+): string {
+	const [path, rawQuery] = base.split("?");
+	const params = new URLSearchParams(rawQuery ?? "");
+	if (querySuffix) {
+		const suffix = querySuffix.startsWith("?")
+			? querySuffix.slice(1)
+			: querySuffix;
+		const suffixParams = new URLSearchParams(suffix);
+		suffixParams.forEach((value, key) => {
+			params.set(key, value);
+		});
+	}
+	for (const [key, value] of Object.entries(overrides)) {
+		params.set(key, value);
+	}
+	const query = params.toString();
+	return query ? `${path}?${query}` : path;
+}
+
+function buildUpstreamHeaders(
+	baseHeaders: Headers,
+	provider: ProviderType,
+	apiKey: string,
+	overrides: Record<string, string>,
+): Headers {
+	const headers = new Headers(baseHeaders);
+	headers.delete("x-admin-token");
+	headers.delete("x-api-key");
+	if (provider === "openai") {
+		headers.set("Authorization", `Bearer ${apiKey}`);
+		headers.set("x-api-key", apiKey);
+	} else if (provider === "anthropic") {
+		headers.delete("Authorization");
+		headers.set("x-api-key", apiKey);
+		headers.set("anthropic-version", "2023-06-01");
+	} else {
+		headers.delete("Authorization");
+		headers.set("x-goog-api-key", apiKey);
+	}
+	for (const [key, value] of Object.entries(overrides)) {
+		headers.set(key, value);
+	}
+	return headers;
+}
+
 /**
- * OpenAI-compatible proxy handler.
+ * Multi-provider proxy handler.
  */
 proxy.all("/*", tokenAuth, async (c) => {
 	const tokenRecord = c.get("tokenRecord") as TokenRecord;
 	let requestText = await c.req.text();
-	const originalRequestText = requestText;
 	const parsedBody = requestText
 		? safeJsonParse<Record<string, unknown> | null>(requestText, null)
 		: null;
-	const model =
-		parsedBody?.model !== undefined && parsedBody?.model !== null
-			? String(parsedBody.model)
-			: null;
-	const isStream = parsedBody?.stream === true;
+	const downstreamProvider = detectDownstreamProvider(c.req.path);
+	const endpointType = detectEndpointType(downstreamProvider, c.req.path);
+	const downstreamModel = parseDownstreamModel(
+		downstreamProvider,
+		c.req.path,
+		parsedBody,
+	);
+	const isStream = parseDownstreamStream(
+		downstreamProvider,
+		c.req.path,
+		parsedBody,
+	);
 	const reasoningEffort = extractReasoningEffort(parsedBody);
-	let mutatedStreamOptions = false;
-	if (isStream && parsedBody && typeof parsedBody === "object") {
+	if (
+		downstreamProvider === "openai" &&
+		isStream &&
+		parsedBody &&
+		typeof parsedBody === "object"
+	) {
 		const streamOptions = (parsedBody as Record<string, unknown>)
 			.stream_options;
 		if (!streamOptions || typeof streamOptions !== "object") {
 			(parsedBody as Record<string, unknown>).stream_options = {
 				include_usage: true,
 			};
-			mutatedStreamOptions = true;
 		} else if (
 			(streamOptions as Record<string, unknown>).include_usage !== true
 		) {
 			(streamOptions as Record<string, unknown>).include_usage = true;
-			mutatedStreamOptions = true;
 		}
 		requestText = JSON.stringify(parsedBody);
+	}
+
+	let normalizedChat: NormalizedChatRequest | null = null;
+	let normalizedEmbedding: NormalizedEmbeddingRequest | null = null;
+	let normalizedImage: NormalizedImageRequest | null = null;
+	if (endpointType === "chat" || endpointType === "responses") {
+		normalizedChat = normalizeChatRequest(
+			downstreamProvider,
+			endpointType,
+			parsedBody,
+			downstreamModel,
+			isStream,
+		);
+	}
+	if (endpointType === "embeddings") {
+		normalizedEmbedding = normalizeEmbeddingRequest(
+			downstreamProvider,
+			parsedBody,
+			downstreamModel,
+		);
+	}
+	if (endpointType === "images") {
+		normalizedImage = normalizeImageRequest(
+			downstreamProvider,
+			parsedBody,
+			downstreamModel,
+		);
 	}
 
 	const channelResult = await c.env.DB.prepare(
@@ -145,7 +255,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 	}
 	const allowedChannels = filterAllowedChannels(activeChannels, tokenRecord);
 	const modelChannels = allowedChannels.filter((channel) =>
-		channelSupportsModel(channel, model),
+		channelSupportsModel(channel, downstreamModel),
 	);
 	const candidates = modelChannels.length > 0 ? modelChannels : allowedChannels;
 
@@ -155,8 +265,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 
 	const ordered = createWeightedOrder(candidates);
 	const targetPath = c.req.path;
-	const fallbackPath =
-		targetPath.toLowerCase() === "/v1/responses" ? "/responses" : targetPath;
 	const querySuffix = c.req.url.includes("?")
 		? `?${c.req.url.split("?")[1]}`
 		: "";
@@ -173,38 +281,227 @@ proxy.all("/*", tokenAuth, async (c) => {
 		let shouldRetry = false;
 		for (const channel of ordered) {
 			lastChannel = channel;
+			const metadata = parseChannelMetadata(channel.metadata_json);
+			const upstreamProvider = resolveProvider(metadata.site_type);
+			const upstreamModel = resolveMappedModel(
+				metadata.model_mapping,
+				downstreamModel,
+			);
+			if (
+				upstreamProvider === "gemini" &&
+				!upstreamModel &&
+				endpointType !== "passthrough"
+			) {
+				continue;
+			}
 			const baseUrl = resolveChannelBaseUrl(channel);
 			const tokens = callTokenMap.get(channel.id) ?? [];
 			const selectedToken = tokens.length > 0 ? selectCallToken(tokens) : null;
 			const apiKey = selectedToken?.api_key ?? channel.api_key;
-			const target = `${baseUrl}${targetPath}${querySuffix}`;
-			const headers = new Headers(c.req.header());
-			headers.set("Authorization", `Bearer ${apiKey}`);
-			headers.set("x-api-key", String(apiKey));
+			const headers = buildUpstreamHeaders(
+				new Headers(c.req.header()),
+				upstreamProvider,
+				String(apiKey),
+				metadata.header_overrides,
+			);
 			headers.delete("host");
 			headers.delete("content-length");
+			let upstreamRequestPath = targetPath;
+			let upstreamFallbackPath: string | undefined;
+			let upstreamBodyText = requestText || undefined;
+			let absoluteUrl: string | undefined;
+			const sameProvider = upstreamProvider === downstreamProvider;
+			if (endpointType === "passthrough") {
+				if (!sameProvider) {
+					continue;
+				}
+				if (upstreamProvider === "gemini") {
+					upstreamRequestPath = applyGeminiModelToPath(
+						upstreamRequestPath,
+						upstreamModel,
+					);
+				} else if (upstreamModel && parsedBody) {
+					upstreamBodyText = JSON.stringify({
+						...parsedBody,
+						model: upstreamModel,
+					});
+				}
+			} else if (sameProvider && parsedBody) {
+				if (upstreamProvider === "gemini") {
+					upstreamRequestPath = applyGeminiModelToPath(
+						upstreamRequestPath,
+						upstreamModel,
+					);
+				} else if (upstreamModel) {
+					upstreamBodyText = JSON.stringify({
+						...parsedBody,
+						model: upstreamModel,
+					});
+				}
+				if (endpointType === "chat" || endpointType === "responses") {
+					if (metadata.endpoint_overrides.chat_url && normalizedChat) {
+						const request = buildUpstreamChatRequest(
+							upstreamProvider,
+							normalizedChat,
+							upstreamModel,
+							endpointType,
+							isStream,
+							metadata.endpoint_overrides,
+						);
+						if (request) {
+							upstreamRequestPath = request.path;
+							absoluteUrl = request.absoluteUrl;
+							upstreamFallbackPath = request.absoluteUrl
+								? undefined
+								: request.fallbackPath;
+						}
+					} else if (
+						endpointType === "responses" &&
+						upstreamProvider === "openai"
+					) {
+						upstreamFallbackPath = "/responses";
+					}
+				}
+				if (
+					endpointType === "embeddings" &&
+					metadata.endpoint_overrides.embedding_url
+				) {
+					if (normalizedEmbedding) {
+						const request = buildUpstreamEmbeddingRequest(
+							upstreamProvider,
+							normalizedEmbedding,
+							upstreamModel,
+							metadata.endpoint_overrides,
+						);
+						if (request) {
+							upstreamRequestPath = request.path;
+							absoluteUrl = request.absoluteUrl;
+						}
+					}
+				}
+				if (
+					endpointType === "images" &&
+					metadata.endpoint_overrides.image_url
+				) {
+					if (normalizedImage) {
+						const request = buildUpstreamImageRequest(
+							upstreamProvider,
+							normalizedImage,
+							upstreamModel,
+							metadata.endpoint_overrides,
+						);
+						if (request) {
+							upstreamRequestPath = request.path;
+							absoluteUrl = request.absoluteUrl;
+						}
+					}
+				}
+			} else {
+				let built: {
+					request: {
+						path: string;
+						fallbackPath?: string;
+						absoluteUrl?: string;
+						body: Record<string, unknown> | null;
+					};
+					bodyText?: string;
+				} | null = null;
+				if (endpointType === "chat" || endpointType === "responses") {
+					if (!normalizedChat) {
+						return jsonError(c, 400, "invalid_body", "invalid_body");
+					}
+					const request = buildUpstreamChatRequest(
+						upstreamProvider,
+						normalizedChat,
+						upstreamModel,
+						endpointType,
+						isStream,
+						metadata.endpoint_overrides,
+					);
+					if (!request) {
+						continue;
+					}
+					built = {
+						request,
+						bodyText: request.body ? JSON.stringify(request.body) : undefined,
+					};
+				} else if (endpointType === "embeddings") {
+					if (!normalizedEmbedding) {
+						return jsonError(c, 400, "invalid_body", "invalid_body");
+					}
+					const request = buildUpstreamEmbeddingRequest(
+						upstreamProvider,
+						normalizedEmbedding,
+						upstreamModel,
+						metadata.endpoint_overrides,
+					);
+					if (!request) {
+						continue;
+					}
+					built = {
+						request,
+						bodyText: request.body ? JSON.stringify(request.body) : undefined,
+					};
+				} else if (endpointType === "images") {
+					if (!normalizedImage) {
+						return jsonError(c, 400, "invalid_body", "invalid_body");
+					}
+					const request = buildUpstreamImageRequest(
+						upstreamProvider,
+						normalizedImage,
+						upstreamModel,
+						metadata.endpoint_overrides,
+					);
+					if (!request) {
+						continue;
+					}
+					built = {
+						request,
+						bodyText: request.body ? JSON.stringify(request.body) : undefined,
+					};
+				}
+				if (!built) {
+					continue;
+				}
+				upstreamRequestPath = built.request.path;
+				absoluteUrl = built.request.absoluteUrl;
+				upstreamFallbackPath = built.request.absoluteUrl
+					? undefined
+					: built.request.fallbackPath;
+				upstreamBodyText = built.bodyText;
+			}
+			const targetBase = absoluteUrl ?? `${baseUrl}${upstreamRequestPath}`;
+			const target = mergeQuery(
+				targetBase,
+				querySuffix,
+				metadata.query_overrides,
+			);
 
 			try {
 				let response = await fetch(target, {
 					method: c.req.method,
 					headers,
-					body: requestText || undefined,
+					body: upstreamBodyText || undefined,
 				});
-				let responsePath = targetPath;
+				let responsePath = upstreamRequestPath;
 				if (
 					(response.status === 400 || response.status === 404) &&
-					fallbackPath !== targetPath
+					upstreamFallbackPath
 				) {
-					const fallbackTarget = `${baseUrl}${fallbackPath}${querySuffix}`;
-					const fallbackBody = mutatedStreamOptions
-						? originalRequestText
-						: requestText;
+					const fallbackTargetBase = absoluteUrl
+						? absoluteUrl
+						: `${baseUrl}${upstreamFallbackPath}`;
+					const fallbackTarget = mergeQuery(
+						fallbackTargetBase,
+						querySuffix,
+						metadata.query_overrides,
+					);
 					response = await fetch(fallbackTarget, {
 						method: c.req.method,
 						headers,
-						body: fallbackBody || undefined,
+						body: upstreamBodyText || undefined,
 					});
-					responsePath = fallbackPath;
+					responsePath = upstreamFallbackPath;
 				}
 
 				lastResponse = response;
@@ -238,7 +535,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 	if (!lastResponse) {
 		await recordUsage(c.env.DB, {
 			tokenId: tokenRecord.id,
-			model,
+			model: downstreamModel,
 			requestPath: lastRequestPath,
 			totalTokens: 0,
 			latencyMs,
@@ -266,7 +563,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 			await recordUsage(c.env.DB, {
 				tokenId: tokenRecord.id,
 				channelId: channelForUsage.id,
-				model,
+				model: downstreamModel,
 				requestPath: lastRequestPath,
 				totalTokens: normalized.totalTokens,
 				promptTokens: normalized.promptTokens,
@@ -291,7 +588,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				completion_tokens: usage?.completionTokens ?? 0,
 				stream: isStream,
 				status: lastResponse.status,
-				model,
+				model: downstreamModel,
 				path: targetPath,
 			});
 		};

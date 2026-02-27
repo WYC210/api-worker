@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **[sites]**: 站点类型接口字段由 claude 改为 Anthropic，并新增数据迁移脚本
+  - 类型: 变更（无方案包）
+  - 文件: apps/worker/src/services/site-metadata.ts, apps/worker/src/routes/sites.ts, apps/worker/src/services/channel-metadata.ts, apps/worker/src/services/provider-transform.ts, apps/worker/src/routes/proxy.ts, apps/worker/migrations/0003_rename_claude_anthropic.sql, apps/ui/src/core/types.ts, apps/ui/src/core/sites.ts, apps/ui/src/features/SitesView.tsx, apps/ui/src/App.tsx, tests/worker/provider-transform.test.ts, tests/worker/channel-metadata.test.ts, helloagents/modules/admin-ui.md, helloagents/modules/sites.md, helloagents/modules/channels.md, helloagents/modules/proxy.md
+- **[admin-ui]**: 站点类型显示将 Claude 调整为 Anthropic，并移除无用的 ChannelsView 导出
+  - 类型: 微调（无方案包）
+  - 文件: apps/ui/src/features/SitesView.tsx, apps/ui/src/core/sites.ts, apps/ui/src/features/ChannelsView.tsx, helloagents/modules/admin-ui.md, helloagents/modules/sites.md, helloagents/modules/channels.md
+- **[proxy]**: 代理支持 OpenAI/Anthropic/Gemini 下游与上游格式转换，加入模型映射与上游覆盖配置
+  - 类型: 变更
+  - 方案: [202602271236_proxy-multi-provider](plan/202602271236_proxy-multi-provider/)
+  - 文件: apps/worker/src/routes/proxy.ts, apps/worker/src/services/channel-metadata.ts, apps/worker/src/services/provider-transform.ts, apps/worker/src/utils/usage.ts, tests/worker/usage.test.ts, tests/worker/channel-metadata.test.ts, tests/worker/provider-transform.test.ts, helloagents/modules/proxy.md, helloagents/INDEX.md
+
 ### 微调
 
 - **[checkin]**: 自动签到不再依赖站点启用状态

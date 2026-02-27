@@ -18,7 +18,7 @@
 - 调用令牌来源于 `channel_call_tokens` 表，按 `channel_id` 聚合
 - 站点类型写入 `channels.metadata_json.site_type`
 - done-hub 仅使用 `base_url`，不再支持多地址
-- openai/claude/gemini 在未填写 base_url 时自动使用官方地址
+- openai/Anthropic/gemini 在未填写 base_url 时自动使用官方地址
 - 一键签到仅执行满足以下条件的记录:
   - `checkin_enabled=1`
 

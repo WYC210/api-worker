@@ -18,10 +18,10 @@
 - 前端状态集中在单页
 - 站点管理采用列表视图，支持分页（默认 10 条），新增/编辑使用弹窗，保留启禁/连通测试操作
 - 站点管理支持名称/URL 搜索与列头排序，搜索/排序后再分页
-- 站点类型支持 new-api / done-hub / subapi / openai / claude / gemini，类型驱动表单字段
+- 站点类型支持 new-api / done-hub / subapi / openai / Anthropic / gemini，类型驱动表单字段
 - 站点表单提供系统令牌、userid、自动签到开关与外部签到地址（new-api 默认关闭）
 - 站点支持多调用令牌（备注 + 令牌值）
-- openai/claude/gemini 站点支持 base_url 为空时自动填充官方地址
+- openai/Anthropic/gemini 站点支持 base_url 为空时自动填充官方地址
 - done-hub 站点仅使用 base_url，不再维护多地址输入
 - 站点连通测试提示令牌成功/失败统计
 - 使用日志支持本地分页（默认 50 条）与固定高度滚动，并展示令牌、输入/输出 tokens、首 token 延迟、流式与推理强度

@@ -76,7 +76,7 @@ const pathToTab: Record<string, TabId> = {
 
 const DEFAULT_BASE_URL_BY_TYPE: Partial<Record<SiteType, string>> = {
 	openai: "https://api.openai.com",
-	claude: "https://api.anthropic.com",
+	anthropic: "https://api.anthropic.com",
 	gemini: "https://generativelanguage.googleapis.com",
 };
 

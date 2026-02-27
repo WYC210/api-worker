@@ -84,6 +84,14 @@ app.use(
 		allowMethods: ["GET", "POST", "OPTIONS"],
 	}),
 );
+app.use(
+	"/v1beta/*",
+	cors({
+		origin: "*",
+		allowHeaders: ["Content-Type", "Authorization", "x-api-key"],
+		allowMethods: ["GET", "POST", "OPTIONS"],
+	}),
+);
 
 app.use("/api/*", async (c, next) => {
 	if (
@@ -112,6 +120,7 @@ app.route("/api/user", newapiUserRoutes);
 app.route("/api/group", newapiGroupRoutes);
 
 app.route("/v1", proxyRoutes);
+app.route("/v1beta", proxyRoutes);
 
 app.notFound(async (c) => {
 	const path = c.req.path;

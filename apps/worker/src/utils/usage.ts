@@ -81,8 +81,33 @@ export function parseUsageFromJson(payload: unknown): NormalizedUsage | null {
 			: null) ??
 		(data.data && typeof data.data === "object"
 			? (data.data as Record<string, unknown>).usage
+			: null) ??
+		(data.message && typeof data.message === "object"
+			? (data.message as Record<string, unknown>).usage
 			: null);
-	return normalizeUsage(usage);
+	const normalizedUsage = normalizeUsage(usage);
+	if (normalizedUsage) {
+		return normalizedUsage;
+	}
+	const usageMetadata =
+		data.usageMetadata ??
+		data.usage_metadata ??
+		(data.response && typeof data.response === "object"
+			? (data.response as Record<string, unknown>).usageMetadata
+			: null);
+	if (!usageMetadata || typeof usageMetadata !== "object") {
+		return null;
+	}
+	const record = usageMetadata as Record<string, unknown>;
+	const mapped = {
+		prompt_tokens: record.promptTokenCount ?? record.prompt_tokens,
+		completion_tokens:
+			record.candidatesTokenCount ??
+			record.completionTokenCount ??
+			record.output_tokens,
+		total_tokens: record.totalTokenCount ?? record.total_tokens,
+	};
+	return normalizeUsage(mapped);
 }
 
 export function parseUsageFromHeaders(

@@ -3,7 +3,7 @@ export type SiteType =
 	| "done-hub"
 	| "subapi"
 	| "openai"
-	| "claude"
+	| "anthropic"
 	| "gemini";
 
 export type SiteCallToken = {

@@ -6,7 +6,7 @@ export type SiteType =
 	| "done-hub"
 	| "subapi"
 	| "openai"
-	| "claude"
+	| "anthropic"
 	| "gemini";
 
 export type EndpointOverrides = {
@@ -43,7 +43,7 @@ export function parseSiteMetadata(
 		rawType === "new-api" ||
 		rawType === "subapi" ||
 		rawType === "openai" ||
-		rawType === "claude" ||
+		rawType === "anthropic" ||
 		rawType === "gemini"
 			? (rawType as SiteType)
 			: rawType === "custom"
