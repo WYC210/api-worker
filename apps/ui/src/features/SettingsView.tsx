@@ -30,26 +30,32 @@ export const SettingsView = ({
 		{
 			label: "流式 usage 解析模式",
 			value: runtimeConfig?.stream_usage_mode ?? "lite",
+			env: "PROXY_STREAM_USAGE_MODE",
 		},
 		{
 			label: "流式解析最大字节",
 			value: runtimeConfig?.stream_usage_max_bytes ?? 262144,
+			env: "PROXY_STREAM_USAGE_MAX_BYTES",
 		},
 		{
 			label: "流式解析并发上限",
 			value: runtimeConfig?.stream_usage_max_parsers ?? 2,
+			env: "PROXY_STREAM_USAGE_MAX_PARSERS",
 		},
 		{
 			label: "队列开关",
 			value: runtimeConfig?.usage_queue_enabled ? "启用" : "关闭",
+			env: "PROXY_USAGE_QUEUE_ENABLED",
 		},
 		{
 			label: "队列绑定",
 			value: runtimeConfig?.usage_queue_bound ? "已绑定" : "未绑定",
+			env: "USAGE_QUEUE 绑定",
 		},
 		{
 			label: "队列实际生效",
 			value: runtimeConfig?.usage_queue_active ? "是" : "否",
+			env: "USAGE_QUEUE 运行时",
 		},
 	];
 
@@ -192,20 +198,22 @@ export const SettingsView = ({
 				<h4 class="app-title text-base">运行时配置（只读）</h4>
 				<p class="mt-2 text-xs text-[color:var(--app-ink-muted)]">
 					需要调整请在 Cloudflare Dashboard 或部署环境中修改以下环境变量，
-					此处仅展示当前生效值。
+					此处仅展示当前生效值（环境变量名已在每项卡片内标注）。
 				</p>
 				<div class="mt-3 grid gap-2 sm:grid-cols-2">
 					{runtimeItems.map((item) => (
-						<div class="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-sm">
-							<span class="text-[color:var(--app-ink-muted)]">{item.label}</span>
-							<span class="font-semibold">{item.value}</span>
+						<div class="rounded-xl bg-white/70 px-3 py-3 text-sm">
+							<div class="text-sm font-semibold text-[color:var(--app-ink)]">
+								{item.label}
+							</div>
+							<div class="mt-1 text-[11px] font-mono text-[color:var(--app-ink-muted)]">
+								{item.env}
+							</div>
+							<div class="mt-2 text-base font-semibold text-[color:var(--app-ink)]">
+								{item.value}
+							</div>
 						</div>
 					))}
-				</div>
-				<div class="mt-3 text-xs text-[color:var(--app-ink-muted)]">
-					<span class="font-semibold">环境变量:</span> PROXY_STREAM_USAGE_MODE,
-					PROXY_STREAM_USAGE_MAX_BYTES, PROXY_STREAM_USAGE_MAX_PARSERS,
-					PROXY_USAGE_QUEUE_ENABLED
 				</div>
 			</div>
 		</div>

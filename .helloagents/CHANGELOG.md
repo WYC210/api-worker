@@ -32,6 +32,8 @@
 
 ### 微调
 
+- **[admin-ui/settings]**: 运行时配置卡片展示并内联环境变量名 — by lsy
+  - 方案: [202603162329_settings-runtime-config-cards](archive/2026-03/202603162329_settings-runtime-config-cards/)
 - **[proxy/settings]**: 流式 usage 解析上限支持 `0` 表示无限制 — by lsy
   - 方案: [202603161849_stream-usage-unlimited](archive/2026-03/202603161849_stream-usage-unlimited/)
 - **[worker/models]**: 引入通道模型能力表并基于“模型广场测试结果+可配置TTL（默认2小时）”进行模型发布与路由匹配
