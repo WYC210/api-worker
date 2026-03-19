@@ -45,7 +45,7 @@ function buildDateFilters(query: Record<string, string>) {
  * Returns aggregated usage metrics.
  */
 dashboard.get("/", async (c) => {
-	const cacheConfig = await getCacheConfig(c.env.DB);
+	const cacheConfig = await getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE);
 	return withApiCache(
 		c,
 		{

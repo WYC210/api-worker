@@ -10,7 +10,7 @@ const usage = new Hono<AppEnv>();
  * Lists usage logs with filters.
  */
 usage.get("/", async (c) => {
-	const cacheConfig = await getCacheConfig(c.env.DB);
+	const cacheConfig = await getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE);
 	return withApiCache(
 		c,
 		{

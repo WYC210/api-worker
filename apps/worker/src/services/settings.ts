@@ -1,5 +1,14 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type {
+	D1Database,
+	DurableObjectNamespace,
+} from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
+import {
+	ALL_CACHE_VERSION_SCOPES,
+	bumpCacheVersionsInStore,
+	readCacheVersionsFromStore,
+	type CacheVersionScope,
+} from "./cache-version-store";
 import { withJsonCache } from "../utils/cache";
 import { nowIso } from "../utils/time";
 
@@ -24,7 +33,7 @@ const DEFAULT_PROXY_RETRY_MAX_RETRIES = 3;
 const DEFAULT_PROXY_USAGE_QUEUE_ENABLED = true;
 const DEFAULT_USAGE_QUEUE_DAILY_LIMIT = 10000;
 const DEFAULT_USAGE_QUEUE_DIRECT_WRITE_RATIO = 0.5;
-const CACHE_CONFIG_TTL_MS = 1000;
+const CACHE_CONFIG_TTL_MS = 0;
 const SETTING_SNAPSHOT_TTL_MS = 1000;
 const RETENTION_KEY = "log_retention_days";
 const SESSION_TTL_KEY = "session_ttl_hours";
@@ -135,15 +144,6 @@ type SettingsCacheControl = {
 let settingsCacheControlSnapshot: CacheControlSnapshot<SettingsCacheControl> | null =
 	null;
 
-type CacheVersionScope =
-	| "dashboard"
-	| "usage"
-	| "models"
-	| "tokens"
-	| "channels"
-	| "call_tokens"
-	| "settings";
-
 const CACHE_VERSION_KEYS: Record<CacheVersionScope, string> = {
 	dashboard: CACHE_VERSION_DASHBOARD_KEY,
 	usage: CACHE_VERSION_USAGE_KEY,
@@ -153,6 +153,8 @@ const CACHE_VERSION_KEYS: Record<CacheVersionScope, string> = {
 	call_tokens: CACHE_VERSION_CALL_TOKENS_KEY,
 	settings: CACHE_VERSION_SETTINGS_KEY,
 };
+
+type CacheVersionRecord = Record<CacheVersionScope, number>;
 
 async function readSetting(
 	db: D1Database,
@@ -302,11 +304,25 @@ async function bumpCacheVersion(
 export async function bumpCacheVersions(
 	db: D1Database,
 	scopes: CacheVersionScope[],
+	cacheVersionStore?: DurableObjectNamespace,
 ): Promise<void> {
-	if (scopes.length === 0) {
+	const mergedScopes = Array.from(
+		new Set<CacheVersionScope>([...scopes, "settings"]),
+	);
+	if (mergedScopes.length === 0) {
 		return;
 	}
-	await Promise.all(scopes.map((scope) => bumpCacheVersion(db, scope)));
+	await Promise.all(mergedScopes.map((scope) => bumpCacheVersion(db, scope)));
+	if (cacheVersionStore) {
+		try {
+			await bumpCacheVersionsInStore(cacheVersionStore, mergedScopes);
+		} catch (error) {
+			console.warn("[cache-version-store:bump_failed]", {
+				error: error instanceof Error ? error.message : String(error),
+				scopes: mergedScopes,
+			});
+		}
+	}
 	clearCacheConfigSnapshot();
 	clearSettingsCacheControlSnapshot();
 }
@@ -425,6 +441,7 @@ export function getRuntimeProxyConfig(
 export async function setProxyRuntimeSettings(
 	db: D1Database,
 	update: Partial<ProxyRuntimeSettings>,
+	cacheVersionStore?: DurableObjectNamespace,
 ): Promise<void> {
 	const tasks: Promise<void>[] = [];
 	if (update.upstream_timeout_ms !== undefined) {
@@ -499,10 +516,48 @@ export async function setProxyRuntimeSettings(
 		return;
 	}
 	await Promise.all(tasks);
-	await bumpCacheVersions(db, ["settings"]);
+	await bumpCacheVersions(db, ["settings"], cacheVersionStore);
 }
 
-export async function getCacheConfig(db: D1Database): Promise<CacheConfig> {
+function parseCacheVersionsFromSettings(
+	settings: Record<string, string>,
+): CacheVersionRecord {
+	return {
+		dashboard: parsePositiveSetting(
+			settings[CACHE_VERSION_DASHBOARD_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		usage: parsePositiveSetting(
+			settings[CACHE_VERSION_USAGE_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		models: parsePositiveSetting(
+			settings[CACHE_VERSION_MODELS_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		tokens: parsePositiveSetting(
+			settings[CACHE_VERSION_TOKENS_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		channels: parsePositiveSetting(
+			settings[CACHE_VERSION_CHANNELS_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		call_tokens: parsePositiveSetting(
+			settings[CACHE_VERSION_CALL_TOKENS_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+		settings: parsePositiveSetting(
+			settings[CACHE_VERSION_SETTINGS_KEY] ?? null,
+			DEFAULT_CACHE_VERSION,
+		),
+	};
+}
+
+export async function getCacheConfig(
+	db: D1Database,
+	cacheVersionStore?: DurableObjectNamespace,
+): Promise<CacheConfig> {
 	const snapshot = cacheConfigSnapshot;
 	if (snapshot && snapshot.expiresAt > Date.now()) {
 		return snapshot.value;
@@ -540,34 +595,21 @@ export async function getCacheConfig(db: D1Database): Promise<CacheConfig> {
 		settings[CACHE_SETTINGS_TTL_KEY] ?? null,
 		DEFAULT_CACHE_SETTINGS_TTL_SECONDS,
 	);
-	const versionDashboard = parsePositiveSetting(
-		settings[CACHE_VERSION_DASHBOARD_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionUsage = parsePositiveSetting(
-		settings[CACHE_VERSION_USAGE_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionModels = parsePositiveSetting(
-		settings[CACHE_VERSION_MODELS_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionTokens = parsePositiveSetting(
-		settings[CACHE_VERSION_TOKENS_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionChannels = parsePositiveSetting(
-		settings[CACHE_VERSION_CHANNELS_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionCallTokens = parsePositiveSetting(
-		settings[CACHE_VERSION_CALL_TOKENS_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
-	const versionSettings = parsePositiveSetting(
-		settings[CACHE_VERSION_SETTINGS_KEY] ?? null,
-		DEFAULT_CACHE_VERSION,
-	);
+	const fallbackVersions = parseCacheVersionsFromSettings(settings);
+	let versions = fallbackVersions;
+	if (cacheVersionStore) {
+		try {
+			versions = await readCacheVersionsFromStore(
+				cacheVersionStore,
+				[...ALL_CACHE_VERSION_SCOPES],
+				fallbackVersions,
+			);
+		} catch (error) {
+			console.warn("[cache-version-store:read_failed]", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
 	const value = {
 		enabled,
 		dashboard_ttl_seconds: dashboardTtl,
@@ -577,13 +619,13 @@ export async function getCacheConfig(db: D1Database): Promise<CacheConfig> {
 		channels_ttl_seconds: channelsTtl,
 		call_tokens_ttl_seconds: callTokensTtl,
 		settings_ttl_seconds: settingsTtl,
-		version_dashboard: versionDashboard,
-		version_usage: versionUsage,
-		version_models: versionModels,
-		version_tokens: versionTokens,
-		version_channels: versionChannels,
-		version_call_tokens: versionCallTokens,
-		version_settings: versionSettings,
+		version_dashboard: versions.dashboard,
+		version_usage: versions.usage,
+		version_models: versions.models,
+		version_tokens: versions.tokens,
+		version_channels: versions.channels,
+		version_call_tokens: versions.call_tokens,
+		version_settings: versions.settings,
 	};
 	setCacheConfigSnapshot(value);
 	return value;
@@ -592,6 +634,7 @@ export async function getCacheConfig(db: D1Database): Promise<CacheConfig> {
 export async function setCacheConfig(
 	db: D1Database,
 	update: CacheConfigUpdate,
+	cacheVersionStore?: DurableObjectNamespace,
 ): Promise<CacheConfig> {
 	const tasks: Promise<void>[] = [];
 	if (update.enabled !== undefined) {
@@ -663,7 +706,7 @@ export async function setCacheConfig(
 		);
 	}
 	if (tasks.length === 0) {
-		return getCacheConfig(db);
+		return getCacheConfig(db, cacheVersionStore);
 	}
 	await Promise.all(tasks);
 	await bumpCacheVersions(db, [
@@ -674,8 +717,8 @@ export async function setCacheConfig(
 		"channels",
 		"call_tokens",
 		"settings",
-	]);
-	return getCacheConfig(db);
+	], cacheVersionStore);
+	return getCacheConfig(db, cacheVersionStore);
 }
 
 /**

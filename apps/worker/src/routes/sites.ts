@@ -314,7 +314,11 @@ sites.post("/", async (c) => {
 		toCallTokenRows(id, callTokens, now),
 	);
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models", "call_tokens"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return c.json({ id });
 });
 
@@ -416,14 +420,22 @@ sites.patch("/:id", async (c) => {
 		);
 	}
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models", "call_tokens"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return c.json({ ok: true });
 });
 
 sites.delete("/:id", async (c) => {
 	const id = c.req.param("id");
 	await deleteChannel(c.env.DB, id);
-	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models", "call_tokens"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return c.json({ ok: true });
 });
 

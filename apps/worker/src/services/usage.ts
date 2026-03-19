@@ -1,4 +1,8 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type {
+	D1Database,
+	DurableObjectNamespace,
+} from "@cloudflare/workers-types";
+import { bumpCacheVersions } from "./settings";
 import { nowIso } from "../utils/time";
 
 export type UsageInput = {
@@ -30,6 +34,7 @@ let lastPruneRetention: number | null = null;
 export async function recordUsage(
 	db: D1Database,
 	input: UsageInput,
+	cacheVersionStore?: DurableObjectNamespace,
 ): Promise<void> {
 	const id = crypto.randomUUID();
 	const createdAt = nowIso();
@@ -79,6 +84,8 @@ export async function recordUsage(
 			.bind(input.totalTokens, createdAt, input.tokenId)
 			.run();
 	}
+
+	await bumpCacheVersions(db, ["usage"], cacheVersionStore);
 }
 
 /**

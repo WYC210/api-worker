@@ -11,7 +11,7 @@ const models = new Hono<AppEnv>();
  * Returns aggregated models from all channels.
  */
 models.get("/", async (c) => {
-	const cacheConfig = await getCacheConfig(c.env.DB);
+	const cacheConfig = await getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE);
 	return withApiCache(
 		c,
 		{

@@ -2,6 +2,18 @@ name = "api-worker"
 main = "src/index.ts"
 compatibility_date = "2026-02-14"
 
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+
+[observability.traces]
+enabled = true
+
+[placement]
+mode = "smart"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "api-worker"
@@ -21,6 +33,10 @@ class_name = "CheckinScheduler"
 name = "USAGE_LIMITER"
 class_name = "UsageLimiter"
 
+[[durable_objects.bindings]]
+name = "CACHE_VERSION_STORE"
+class_name = "CacheVersionStore"
+
 [[queues.producers]]
 queue = "usage-events"
 binding = "USAGE_QUEUE"
@@ -38,6 +54,10 @@ new_sqlite_classes = ["CheckinScheduler"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["UsageLimiter"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["CacheVersionStore"]
 
 
 

@@ -208,7 +208,11 @@ newapi.put("/tag", async (c) => {
 			.run();
 	}
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -229,7 +233,11 @@ newapi.post("/tag/enabled", async (c) => {
 			.run();
 	}
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -250,7 +258,11 @@ newapi.post("/tag/disabled", async (c) => {
 			.run();
 	}
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -299,7 +311,11 @@ newapi.post("/", async (c) => {
 		updated_at: now,
 	});
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -353,7 +369,11 @@ newapi.put("/", async (c) => {
 		updated_at: nowIso(),
 	});
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -364,7 +384,11 @@ newapi.delete("/:id", async (c) => {
 		return newApiFailure(c, 404, "渠道不存在");
 	}
 	await deleteChannel(c.env.DB, id);
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c);
 });
 
@@ -393,7 +417,11 @@ newapi.get("/test/:id", async (c) => {
 		models: result.models,
 	});
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c, undefined, "测试成功");
 });
 
@@ -423,7 +451,11 @@ newapi.post("/test", async (c) => {
 		elapsed: result.elapsed,
 		models: result.models,
 	});
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c, undefined, "测试成功");
 });
 
@@ -452,7 +484,11 @@ newapi.get("/fetch_models/:id", async (c) => {
 		models: result.models,
 	});
 
-	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
+	await bumpCacheVersions(
+		c.env.DB,
+		["channels", "models"],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return newApiSuccess(c, result.models);
 });
 

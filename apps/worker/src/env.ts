@@ -15,6 +15,7 @@ export type Bindings = {
 	PROXY_USAGE_QUEUE_ENABLED?: string;
 	USAGE_QUEUE?: Queue<UsageQueueEvent>;
 	USAGE_LIMITER?: DurableObjectNamespace;
+	CACHE_VERSION_STORE?: DurableObjectNamespace;
 	CHECKIN_SCHEDULER: DurableObjectNamespace;
 };
 

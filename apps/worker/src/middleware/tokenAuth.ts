@@ -27,7 +27,7 @@ export const tokenAuth = createMiddleware<AppEnv>(async (c, next) => {
 	}
 
 	const tokenHash = await sha256Hex(token);
-	const cacheConfig = await getCacheConfig(c.env.DB);
+	const cacheConfig = await getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE);
 	const record = await withJsonCache<TokenRecord | null>(
 		{
 			namespace: "tokens",

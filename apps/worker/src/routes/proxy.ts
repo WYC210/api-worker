@@ -216,7 +216,11 @@ function createUsageEventScheduler(
 		const task = (async () => {
 			// usage 主日志永远走直写，避免队列或限流检查导致观测断流。
 			if (event.type === "usage") {
-				await processUsageQueueEvent(c.env.DB, event);
+				await processUsageQueueEvent(
+					c.env.DB,
+					event,
+					c.env.CACHE_VERSION_STORE,
+				);
 				return;
 			}
 			const useQueue = await shouldUseQueue();
@@ -235,7 +239,11 @@ function createUsageEventScheduler(
 					});
 				}
 			}
-			await processUsageQueueEvent(c.env.DB, event);
+			await processUsageQueueEvent(
+				c.env.DB,
+				event,
+				c.env.CACHE_VERSION_STORE,
+			);
 		})().catch((error) => {
 			console.error("[usage:event_schedule_failed]", {
 				event_type: event.type,
@@ -515,7 +523,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 	const tokenRecord = c.get("tokenRecord") as TokenRecord;
 	const requestStart = Date.now();
 	const [cacheConfig, runtimeSettings] = await Promise.all([
-		getCacheConfig(c.env.DB),
+		getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE),
 		getProxyRuntimeSettings(c.env.DB),
 	]);
 	const scheduleUsageEvent = createUsageEventScheduler(c, runtimeSettings);

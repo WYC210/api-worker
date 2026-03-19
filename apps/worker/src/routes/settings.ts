@@ -44,7 +44,7 @@ settings.get("/", async (c) => {
 	);
 	const runtimeSettings = await getProxyRuntimeSettings(c.env.DB);
 	const runtimeConfig = getRuntimeProxyConfig(c.env, runtimeSettings);
-	const cacheConfig = await getCacheConfig(c.env.DB);
+	const cacheConfig = await getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE);
 	let usageQueueStatus: {
 		count: number | null;
 		date: string | null;
@@ -465,12 +465,16 @@ settings.put("/", async (c) => {
 	}
 
 	if (cacheTouched) {
-		await setCacheConfig(c.env.DB, cachePatch);
+		await setCacheConfig(c.env.DB, cachePatch, c.env.CACHE_VERSION_STORE);
 		touched = true;
 	}
 
 	if (runtimeTouched) {
-		await setProxyRuntimeSettings(c.env.DB, runtimePatch);
+		await setProxyRuntimeSettings(
+			c.env.DB,
+			runtimePatch,
+			c.env.CACHE_VERSION_STORE,
+		);
 		touched = true;
 	}
 
@@ -498,7 +502,7 @@ settings.post("/cache/refresh", async (c) => {
 		"channels",
 		"call_tokens",
 		"settings",
-	]);
+	], c.env.CACHE_VERSION_STORE);
 	return c.json({ ok: true });
 });
 

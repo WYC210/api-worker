@@ -1,4 +1,8 @@
-import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
+import type {
+	D1Database,
+	DurableObjectNamespace,
+	ExecutionContext,
+} from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
 import {
 	recordChannelModelError,
@@ -51,9 +55,10 @@ function resolveNowSeconds(value?: number): number {
 export async function processUsageQueueEvent(
 	db: D1Database,
 	event: UsageQueueEvent,
+	cacheVersionStore?: DurableObjectNamespace,
 ): Promise<void> {
 	if (event.type === "usage") {
-		await recordUsage(db, event.payload);
+		await recordUsage(db, event.payload, cacheVersionStore);
 		return;
 	}
 	if (event.type === "capability_upsert") {
@@ -85,7 +90,11 @@ export async function handleUsageQueue(
 ): Promise<void> {
 	const tasks = batch.messages.map(async (message) => {
 		try {
-			await processUsageQueueEvent(env.DB, message.body);
+			await processUsageQueueEvent(
+				env.DB,
+				message.body,
+				env.CACHE_VERSION_STORE,
+			);
 			message.ack();
 		} catch (error) {
 			console.error("[usage-queue:error]", {

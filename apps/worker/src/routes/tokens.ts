@@ -110,7 +110,7 @@ tokens.post("/", async (c) => {
 		)
 		.run();
 
-	await bumpCacheVersions(c.env.DB, ["tokens"]);
+	await bumpCacheVersions(c.env.DB, ["tokens"], c.env.CACHE_VERSION_STORE);
 	return c.json({
 		id,
 		token: rawToken,
@@ -167,7 +167,7 @@ tokens.patch("/:id", async (c) => {
 		)
 		.run();
 
-	await bumpCacheVersions(c.env.DB, ["tokens"]);
+	await bumpCacheVersions(c.env.DB, ["tokens"], c.env.CACHE_VERSION_STORE);
 	return c.json({ ok: true });
 });
 
@@ -193,7 +193,7 @@ tokens.get("/:id/reveal", async (c) => {
 tokens.delete("/:id", async (c) => {
 	const id = c.req.param("id");
 	await c.env.DB.prepare("DELETE FROM tokens WHERE id = ?").bind(id).run();
-	await bumpCacheVersions(c.env.DB, ["tokens"]);
+	await bumpCacheVersions(c.env.DB, ["tokens"], c.env.CACHE_VERSION_STORE);
 	return c.json({ ok: true });
 });
 
