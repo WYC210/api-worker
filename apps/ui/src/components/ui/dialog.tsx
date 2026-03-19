@@ -8,11 +8,7 @@ export type DialogProps = {
 	children?: unknown;
 };
 
-export const Dialog = ({
-	open,
-	onClose,
-	children,
-}: DialogProps): JSX.Element | null => {
+export const Dialog = ({ open, onClose, children }: DialogProps) => {
 	if (!open) {
 		return null;
 	}

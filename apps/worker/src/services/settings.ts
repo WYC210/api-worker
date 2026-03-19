@@ -3,14 +3,14 @@ import type {
 	DurableObjectNamespace,
 } from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
+import { withJsonCache } from "../utils/cache";
+import { nowIso } from "../utils/time";
 import {
 	ALL_CACHE_VERSION_SCOPES,
 	bumpCacheVersionsInStore,
-	readCacheVersionsFromStore,
 	type CacheVersionScope,
+	readCacheVersionsFromStore,
 } from "./cache-version-store";
-import { withJsonCache } from "../utils/cache";
-import { nowIso } from "../utils/time";
 
 const DEFAULT_LOG_RETENTION_DAYS = 30;
 const DEFAULT_SESSION_TTL_HOURS = 12;
@@ -709,15 +709,19 @@ export async function setCacheConfig(
 		return getCacheConfig(db, cacheVersionStore);
 	}
 	await Promise.all(tasks);
-	await bumpCacheVersions(db, [
-		"dashboard",
-		"usage",
-		"models",
-		"tokens",
-		"channels",
-		"call_tokens",
-		"settings",
-	], cacheVersionStore);
+	await bumpCacheVersions(
+		db,
+		[
+			"dashboard",
+			"usage",
+			"models",
+			"tokens",
+			"channels",
+			"call_tokens",
+			"settings",
+		],
+		cacheVersionStore,
+	);
 	return getCacheConfig(db, cacheVersionStore);
 }
 

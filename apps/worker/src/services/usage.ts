@@ -2,8 +2,8 @@ import type {
 	D1Database,
 	DurableObjectNamespace,
 } from "@cloudflare/workers-types";
-import { bumpCacheVersions } from "./settings";
 import { nowIso } from "../utils/time";
+import { bumpCacheVersions } from "./settings";
 
 export type UsageInput = {
 	tokenId?: string | null;

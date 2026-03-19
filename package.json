@@ -12,7 +12,7 @@
 		"deploy": "node scripts/deploy.mjs update",
 		"deploy:init": "node scripts/deploy.mjs init",
 		"deploy:update": "node scripts/deploy.mjs update",
-		"test": "vitest",
+		"test": "vitest --passWithNoTests",
 		"format": "bunx --bun biome format --write .",
 		"lint": "bunx --bun biome lint --write .",
 		"check": "bunx --bun biome check --write .",

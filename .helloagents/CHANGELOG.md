@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 快速修改
+
+- **[worker/proxy]**: 删除 `chat-response-adapter` 与 `provider-transform` 中未使用的 JS 回退转换辅助函数，保留 WASM 主路径 — by lsy
+  - 类型: 快速修改（无方案包）
+  - 文件: apps/worker/src/services/chat-response-adapter.ts:1-140, apps/worker/src/services/provider-transform.ts:1-170
+
 ### ????
 
 - **[proxy/usage]**: ???? usage ?????? ? by lsy

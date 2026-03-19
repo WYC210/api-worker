@@ -145,6 +145,6 @@ export default {
 	queue: handleUsageQueue,
 };
 
+export { CacheVersionStore } from "./services/cache-version-store";
 export { CheckinScheduler } from "./services/checkin-scheduler";
 export { UsageLimiter } from "./services/usage-limiter";
-export { CacheVersionStore } from "./services/cache-version-store";

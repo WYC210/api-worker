@@ -239,11 +239,7 @@ function createUsageEventScheduler(
 					});
 				}
 			}
-			await processUsageQueueEvent(
-				c.env.DB,
-				event,
-				c.env.CACHE_VERSION_STORE,
-			);
+			await processUsageQueueEvent(c.env.DB, event, c.env.CACHE_VERSION_STORE);
 		})().catch((error) => {
 			console.error("[usage:event_schedule_failed]", {
 				event_type: event.type,

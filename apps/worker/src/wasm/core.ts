@@ -1,7 +1,7 @@
-import { initSync } from "./generated/worker_wasm_core";
-import * as wasm from "./generated/worker_wasm_core";
-import wasmModule from "./generated/worker_wasm_core_bg.wasm";
 import { safeJsonParse } from "../utils/json";
+import * as wasm from "./generated/worker_wasm_core";
+import { initSync } from "./generated/worker_wasm_core";
+import wasmModule from "./generated/worker_wasm_core_bg.wasm";
 
 type NormalizedUsageLike = {
 	totalTokens: number;
@@ -60,7 +60,10 @@ export const warmupWasmCore = (): void => {
 export const normalizeUsageViaWasm = (
 	raw: unknown,
 ): NormalizedUsageLike | null =>
-	safeJsonParse<NormalizedUsageLike | null>(wasm.normalize_usage(toJson(raw)), null);
+	safeJsonParse<NormalizedUsageLike | null>(
+		wasm.normalize_usage(toJson(raw)),
+		null,
+	);
 
 export const parseUsageFromJsonViaWasm = (
 	payload: unknown,
@@ -124,7 +127,11 @@ export const parseDownstreamModelViaWasm = (
 	path: string,
 	body: Record<string, unknown> | null,
 ): string | null => {
-	const output = wasm.parse_downstream_model(provider, path, toJson(body ?? {}));
+	const output = wasm.parse_downstream_model(
+		provider,
+		path,
+		toJson(body ?? {}),
+	);
 	return output.length > 0 ? output : null;
 };
 

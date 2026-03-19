@@ -3,7 +3,6 @@ import {
 	adaptChatJsonViaWasm,
 	adaptSseLineViaWasm,
 	geminiUsageTokensViaWasm,
-	mapFinishReasonViaWasm,
 } from "../wasm/core";
 import type { EndpointType, ProviderType } from "./provider-transform";
 
@@ -18,30 +17,6 @@ type AdaptOptions = {
 };
 
 type AdapterFn = (options: AdaptOptions) => Promise<Response>;
-
-function mapOpenAiFinishReasonToAnthropic(
-	reason: unknown,
-): "end_turn" | "max_tokens" | "tool_use" | "stop_sequence" | null {
-	const mapped = mapFinishReasonViaWasm("openai_to_anthropic", reason);
-	return mapped === "end_turn" ||
-		mapped === "max_tokens" ||
-		mapped === "tool_use" ||
-		mapped === "stop_sequence"
-		? mapped
-		: null;
-}
-
-function mapAnthropicStopReasonToOpenAi(
-	reason: unknown,
-): "stop" | "length" | "tool_calls" | "stop_sequence" | null {
-	const mapped = mapFinishReasonViaWasm("anthropic_to_openai", reason);
-	return mapped === "stop" ||
-		mapped === "length" ||
-		mapped === "tool_calls" ||
-		mapped === "stop_sequence"
-		? mapped
-		: null;
-}
 
 function openAiContentToText(content: unknown): string {
 	if (typeof content === "string") {
@@ -101,16 +76,6 @@ function geminiCandidateText(payload: Record<string, unknown>): string {
 		.join("");
 }
 
-function geminiFinishReason(payload: Record<string, unknown>): string | null {
-	const candidates = Array.isArray(payload.candidates)
-		? (payload.candidates as Record<string, unknown>[])
-		: [];
-	const firstCandidate = candidates[0] ?? {};
-	return typeof firstCandidate.finishReason === "string"
-		? firstCandidate.finishReason
-		: null;
-}
-
 function geminiUsageTokens(payload: Record<string, unknown>): {
 	promptTokens: number;
 	completionTokens: number;
@@ -118,62 +83,6 @@ function geminiUsageTokens(payload: Record<string, unknown>): {
 } {
 	const usage = geminiUsageTokensViaWasm(payload);
 	return usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-}
-
-function mapGeminiFinishReasonToOpenAi(
-	reason: unknown,
-): "stop" | "length" | "tool_calls" | "stop_sequence" | null {
-	const mapped = mapFinishReasonViaWasm("gemini_to_openai", reason);
-	return mapped === "stop" ||
-		mapped === "length" ||
-		mapped === "tool_calls" ||
-		mapped === "stop_sequence"
-		? mapped
-		: null;
-}
-
-function mapGeminiFinishReasonToAnthropic(
-	reason: unknown,
-): "end_turn" | "max_tokens" | "tool_use" | "stop_sequence" | null {
-	const mapped = mapFinishReasonViaWasm("gemini_to_anthropic", reason);
-	return mapped === "end_turn" ||
-		mapped === "max_tokens" ||
-		mapped === "tool_use" ||
-		mapped === "stop_sequence"
-		? mapped
-		: null;
-}
-
-function mapOpenAiFinishReasonToGemini(
-	reason: unknown,
-): "STOP" | "MAX_TOKENS" | "STOP_SEQUENCE" | "TOOL_CALL" | null {
-	const mapped = mapFinishReasonViaWasm("openai_to_gemini", reason);
-	return mapped === "STOP" ||
-		mapped === "MAX_TOKENS" ||
-		mapped === "STOP_SEQUENCE" ||
-		mapped === "TOOL_CALL"
-		? mapped
-		: null;
-}
-
-function mapAnthropicStopReasonToGemini(
-	reason: unknown,
-): "STOP" | "MAX_TOKENS" | "STOP_SEQUENCE" | "TOOL_CALL" | null {
-	const mapped = mapFinishReasonViaWasm("anthropic_to_gemini", reason);
-	return mapped === "STOP" ||
-		mapped === "MAX_TOKENS" ||
-		mapped === "STOP_SEQUENCE" ||
-		mapped === "TOOL_CALL"
-		? mapped
-		: null;
-}
-
-function extractOpenAiDeltaText(delta: unknown): string {
-	if (!delta || typeof delta !== "object") {
-		return "";
-	}
-	const record = delta as Record<string, unknown>;
-	return openAiContentToText(record.content);
 }
 
 function writeSseEvent(

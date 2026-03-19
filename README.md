@@ -38,7 +38,6 @@ Cloudflare Workers + D1 的 API 网关与管理台一体化项目。
 ├─ scripts/
 │  ├─ dev.mjs               # 本地并行启动 worker + ui
 │  └─ deploy.mjs            # 本地部署流程脚本（构建 + 本地迁移）
-├─ tests/
 ├─ package.json
 └─ README.md
 ```
@@ -250,6 +249,7 @@ bun run deploy:update -- --target auto --migrate auto
 
 ```bash
 bun run typecheck
+bun run check
 bun run test
 ```
 

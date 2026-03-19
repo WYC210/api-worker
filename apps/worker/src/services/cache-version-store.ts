@@ -28,7 +28,10 @@ type VersionsResponse = {
 
 const SCOPE_SET = new Set<string>(ALL_CACHE_VERSION_SCOPES);
 
-function normalizeVersion(value: unknown, fallback = DEFAULT_CACHE_VERSION): number {
+function normalizeVersion(
+	value: unknown,
+	fallback = DEFAULT_CACHE_VERSION,
+): number {
 	const parsed = Number(value);
 	if (!Number.isFinite(parsed) || parsed <= 0) {
 		return fallback;

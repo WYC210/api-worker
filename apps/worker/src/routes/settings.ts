@@ -494,15 +494,19 @@ settings.put("/", async (c) => {
 });
 
 settings.post("/cache/refresh", async (c) => {
-	await bumpCacheVersions(c.env.DB, [
-		"dashboard",
-		"usage",
-		"models",
-		"tokens",
-		"channels",
-		"call_tokens",
-		"settings",
-	], c.env.CACHE_VERSION_STORE);
+	await bumpCacheVersions(
+		c.env.DB,
+		[
+			"dashboard",
+			"usage",
+			"models",
+			"tokens",
+			"channels",
+			"call_tokens",
+			"settings",
+		],
+		c.env.CACHE_VERSION_STORE,
+	);
 	return c.json({ ok: true });
 });
 

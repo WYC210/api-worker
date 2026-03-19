@@ -1,6 +1,6 @@
+import { createWeightedOrderIndicesViaWasm } from "../wasm/core";
 import { extractModels } from "./channel-models";
 import type { ChannelRecord } from "./channel-types";
-import { createWeightedOrderIndicesViaWasm } from "../wasm/core";
 
 export type { ModelEntry } from "./channel-models";
 export type { ChannelRecord } from "./channel-types";
@@ -24,7 +24,9 @@ export function createWeightedOrder(
 	}
 	const mapped = wasmOrder
 		.map((index) => pool[index])
-		.filter((item): item is ChannelRecord & { weight: number } => Boolean(item));
+		.filter((item): item is ChannelRecord & { weight: number } =>
+			Boolean(item),
+		);
 	if (mapped.length !== pool.length) {
 		throw new Error("Weighted order index out of range");
 	}
