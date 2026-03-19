@@ -13,7 +13,8 @@
 			"!helloagents",
 			"!.agents",
 			"!tests",
-			"!**/node_modules"
+			"!**/node_modules",
+			"!apps/worker/wasm/target"
 		]
 	},
 	"formatter": {

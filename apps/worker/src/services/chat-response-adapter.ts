@@ -1,4 +1,10 @@
 import { safeJsonParse } from "../utils/json";
+import {
+	adaptChatJsonViaWasm,
+	adaptSseLineViaWasm,
+	geminiUsageTokensViaWasm,
+	mapFinishReasonViaWasm,
+} from "../wasm/core";
 import type { ProviderType } from "./provider-transform";
 
 type AdaptOptions = {
@@ -14,39 +20,25 @@ type AdapterFn = (options: AdaptOptions) => Promise<Response>;
 function mapOpenAiFinishReasonToAnthropic(
 	reason: unknown,
 ): "end_turn" | "max_tokens" | "tool_use" | "stop_sequence" | null {
-	const normalized = typeof reason === "string" ? reason : "";
-	if (normalized === "stop") {
-		return "end_turn";
-	}
-	if (normalized === "length") {
-		return "max_tokens";
-	}
-	if (normalized === "tool_calls" || normalized === "function_call") {
-		return "tool_use";
-	}
-	if (normalized === "stop_sequence") {
-		return "stop_sequence";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("openai_to_anthropic", reason);
+	return mapped === "end_turn" ||
+		mapped === "max_tokens" ||
+		mapped === "tool_use" ||
+		mapped === "stop_sequence"
+		? mapped
+		: null;
 }
 
 function mapAnthropicStopReasonToOpenAi(
 	reason: unknown,
 ): "stop" | "length" | "tool_calls" | "stop_sequence" | null {
-	const normalized = typeof reason === "string" ? reason : "";
-	if (normalized === "end_turn") {
-		return "stop";
-	}
-	if (normalized === "max_tokens") {
-		return "length";
-	}
-	if (normalized === "tool_use") {
-		return "tool_calls";
-	}
-	if (normalized === "stop_sequence") {
-		return "stop_sequence";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("anthropic_to_openai", reason);
+	return mapped === "stop" ||
+		mapped === "length" ||
+		mapped === "tool_calls" ||
+		mapped === "stop_sequence"
+		? mapped
+		: null;
 }
 
 function openAiContentToText(content: unknown): string {
@@ -122,94 +114,56 @@ function geminiUsageTokens(payload: Record<string, unknown>): {
 	completionTokens: number;
 	totalTokens: number;
 } {
-	const usage =
-		payload.usageMetadata && typeof payload.usageMetadata === "object"
-			? (payload.usageMetadata as Record<string, unknown>)
-			: {};
-	const promptTokens =
-		Number(usage.promptTokenCount ?? usage.inputTokenCount ?? 0) || 0;
-	const completionTokens =
-		Number(usage.candidatesTokenCount ?? usage.outputTokenCount ?? 0) || 0;
-	const totalTokens =
-		Number(usage.totalTokenCount ?? promptTokens + completionTokens) ||
-		promptTokens + completionTokens;
-	return { promptTokens, completionTokens, totalTokens };
+	const usage = geminiUsageTokensViaWasm(payload);
+	return usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 }
 
 function mapGeminiFinishReasonToOpenAi(
 	reason: unknown,
 ): "stop" | "length" | "tool_calls" | "stop_sequence" | null {
-	const normalized = typeof reason === "string" ? reason.toUpperCase() : "";
-	if (normalized === "STOP") {
-		return "stop";
-	}
-	if (normalized === "MAX_TOKENS") {
-		return "length";
-	}
-	if (normalized === "STOP_SEQUENCE") {
-		return "stop_sequence";
-	}
-	if (normalized === "TOOL_CALL" || normalized === "FUNCTION_CALL") {
-		return "tool_calls";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("gemini_to_openai", reason);
+	return mapped === "stop" ||
+		mapped === "length" ||
+		mapped === "tool_calls" ||
+		mapped === "stop_sequence"
+		? mapped
+		: null;
 }
 
 function mapGeminiFinishReasonToAnthropic(
 	reason: unknown,
 ): "end_turn" | "max_tokens" | "tool_use" | "stop_sequence" | null {
-	const normalized = typeof reason === "string" ? reason.toUpperCase() : "";
-	if (normalized === "STOP") {
-		return "end_turn";
-	}
-	if (normalized === "MAX_TOKENS") {
-		return "max_tokens";
-	}
-	if (normalized === "STOP_SEQUENCE") {
-		return "stop_sequence";
-	}
-	if (normalized === "TOOL_CALL" || normalized === "FUNCTION_CALL") {
-		return "tool_use";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("gemini_to_anthropic", reason);
+	return mapped === "end_turn" ||
+		mapped === "max_tokens" ||
+		mapped === "tool_use" ||
+		mapped === "stop_sequence"
+		? mapped
+		: null;
 }
 
 function mapOpenAiFinishReasonToGemini(
 	reason: unknown,
 ): "STOP" | "MAX_TOKENS" | "STOP_SEQUENCE" | "TOOL_CALL" | null {
-	const normalized = typeof reason === "string" ? reason : "";
-	if (normalized === "stop") {
-		return "STOP";
-	}
-	if (normalized === "length") {
-		return "MAX_TOKENS";
-	}
-	if (normalized === "stop_sequence") {
-		return "STOP_SEQUENCE";
-	}
-	if (normalized === "tool_calls" || normalized === "function_call") {
-		return "TOOL_CALL";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("openai_to_gemini", reason);
+	return mapped === "STOP" ||
+		mapped === "MAX_TOKENS" ||
+		mapped === "STOP_SEQUENCE" ||
+		mapped === "TOOL_CALL"
+		? mapped
+		: null;
 }
 
 function mapAnthropicStopReasonToGemini(
 	reason: unknown,
 ): "STOP" | "MAX_TOKENS" | "STOP_SEQUENCE" | "TOOL_CALL" | null {
-	const normalized = typeof reason === "string" ? reason : "";
-	if (normalized === "end_turn") {
-		return "STOP";
-	}
-	if (normalized === "max_tokens") {
-		return "MAX_TOKENS";
-	}
-	if (normalized === "stop_sequence") {
-		return "STOP_SEQUENCE";
-	}
-	if (normalized === "tool_use") {
-		return "TOOL_CALL";
-	}
-	return null;
+	const mapped = mapFinishReasonViaWasm("anthropic_to_gemini", reason);
+	return mapped === "STOP" ||
+		mapped === "MAX_TOKENS" ||
+		mapped === "STOP_SEQUENCE" ||
+		mapped === "TOOL_CALL"
+		? mapped
+		: null;
 }
 
 function extractOpenAiDeltaText(delta: unknown): string {
@@ -268,47 +222,20 @@ async function adaptOpenAiJsonToAnthropic(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid OpenAI JSON payload");
 	}
-
-	const choices = Array.isArray(payload.choices)
-		? (payload.choices as Record<string, unknown>[])
-		: [];
-	const firstChoice = choices[0] ?? {};
-	const message =
-		firstChoice.message && typeof firstChoice.message === "object"
-			? (firstChoice.message as Record<string, unknown>)
-			: {};
-	const usage =
-		payload.usage && typeof payload.usage === "object"
-			? (payload.usage as Record<string, unknown>)
-			: {};
-	const promptTokens = Number(usage.prompt_tokens ?? 0) || 0;
-	const completionTokens = Number(usage.completion_tokens ?? 0) || 0;
-	const stopReason = mapOpenAiFinishReasonToAnthropic(
-		firstChoice.finish_reason,
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"openai_to_anthropic",
+		payload,
+		options.model,
 	);
-	const text = openAiContentToText(message.content);
-	const transformed = {
-		id:
-			typeof payload.id === "string"
-				? payload.id.replace(/^chatcmpl/, "msg")
-				: `msg_${Date.now()}`,
-		type: "message",
-		role: "assistant",
-		model: options.model ?? String(payload.model ?? ""),
-		content: text ? [{ type: "text", text }] : [],
-		stop_reason: stopReason,
-		stop_sequence: null,
-		usage: {
-			input_tokens: promptTokens,
-			output_tokens: completionTokens,
-		},
-	};
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: openai_to_anthropic");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -385,24 +312,19 @@ function adaptOpenAiSseToAnthropic(options: AdaptOptions): Response {
 							});
 						}
 
-						const usage =
-							parsed.usage && typeof parsed.usage === "object"
-								? (parsed.usage as Record<string, unknown>)
-								: null;
-						if (usage) {
-							outputTokens =
-								Number(usage.completion_tokens ?? outputTokens) || outputTokens;
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"openai",
+							"anthropic",
+							options.model,
+						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: openai_to_anthropic");
 						}
-
-						const choices = Array.isArray(parsed.choices)
-							? (parsed.choices as Record<string, unknown>[])
-							: [];
-						const firstChoice = choices[0] ?? {};
-						const delta =
-							firstChoice.delta && typeof firstChoice.delta === "object"
-								? (firstChoice.delta as Record<string, unknown>)
-								: null;
-						const deltaText = extractOpenAiDeltaText(delta);
+						if (typeof wasmLine.outputTokens === "number") {
+							outputTokens = wasmLine.outputTokens;
+						}
+						const deltaText = typeof wasmLine.text === "string" ? wasmLine.text : "";
 						if (deltaText) {
 							writeSseEvent(controller, encoder, "content_block_delta", {
 								type: "content_block_delta",
@@ -411,9 +333,8 @@ function adaptOpenAiSseToAnthropic(options: AdaptOptions): Response {
 							});
 						}
 
-						const stopReason = mapOpenAiFinishReasonToAnthropic(
-							firstChoice.finish_reason,
-						);
+						const stopReason =
+							typeof wasmLine.stopReason === "string" ? wasmLine.stopReason : null;
 						if (stopReason && !stopped) {
 							stopped = true;
 							writeSseEvent(controller, encoder, "content_block_stop", {
@@ -472,43 +393,20 @@ async function adaptAnthropicJsonToOpenAi(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid Anthropic JSON payload");
 	}
-	const usage =
-		payload.usage && typeof payload.usage === "object"
-			? (payload.usage as Record<string, unknown>)
-			: {};
-	const promptTokens = Number(usage.input_tokens ?? 0) || 0;
-	const completionTokens = Number(usage.output_tokens ?? 0) || 0;
-	const text = anthropicContentToText(payload.content);
-	const transformed = {
-		id:
-			typeof payload.id === "string"
-				? payload.id.replace(/^msg/, "chatcmpl")
-				: `chatcmpl_${Date.now()}`,
-		object: "chat.completion",
-		created: Math.floor(Date.now() / 1000),
-		model: options.model ?? String(payload.model ?? ""),
-		choices: [
-			{
-				index: 0,
-				message: {
-					role: "assistant",
-					content: text,
-				},
-				finish_reason: mapAnthropicStopReasonToOpenAi(payload.stop_reason),
-			},
-		],
-		usage: {
-			prompt_tokens: promptTokens,
-			completion_tokens: completionTokens,
-			total_tokens: promptTokens + completionTokens,
-		},
-	};
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"anthropic_to_openai",
+		payload,
+		options.model,
+	);
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: anthropic_to_openai");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -558,8 +456,17 @@ function adaptAnthropicSseToOpenAi(options: AdaptOptions): Response {
 							newlineIndex = buffer.indexOf("\n");
 							continue;
 						}
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"anthropic",
+							"openai",
+							options.model,
+						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: anthropic_to_openai");
+						}
 						const eventType =
-							typeof parsed.type === "string" ? parsed.type : "";
+							typeof wasmLine.eventType === "string" ? wasmLine.eventType : "";
 						if (!started && eventType === "message_start") {
 							started = true;
 							writeOpenAiSseChunk(controller, encoder, {
@@ -579,11 +486,7 @@ function adaptAnthropicSseToOpenAi(options: AdaptOptions): Response {
 							continue;
 						}
 						if (eventType === "content_block_delta") {
-							const delta =
-								parsed.delta && typeof parsed.delta === "object"
-									? (parsed.delta as Record<string, unknown>)
-									: {};
-							const text = typeof delta.text === "string" ? delta.text : "";
+							const text = typeof wasmLine.text === "string" ? wasmLine.text : "";
 							if (text) {
 								writeOpenAiSseChunk(controller, encoder, {
 									id: completionId,
@@ -603,13 +506,10 @@ function adaptAnthropicSseToOpenAi(options: AdaptOptions): Response {
 							continue;
 						}
 						if (eventType === "message_delta" && !stopSent) {
-							const delta =
-								parsed.delta && typeof parsed.delta === "object"
-									? (parsed.delta as Record<string, unknown>)
-									: {};
-							const finishReason = mapAnthropicStopReasonToOpenAi(
-								delta.stop_reason,
-							);
+							const finishReason =
+								typeof wasmLine.finishReason === "string"
+									? wasmLine.finishReason
+									: null;
 							writeOpenAiSseChunk(controller, encoder, {
 								id: completionId,
 								object: "chat.completion.chunk",
@@ -657,35 +557,20 @@ async function adaptGeminiJsonToOpenAi(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid Gemini JSON payload");
 	}
-	const text = geminiCandidateText(payload);
-	const finishReason = mapGeminiFinishReasonToOpenAi(
-		geminiFinishReason(payload),
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"gemini_to_openai",
+		payload,
+		options.model,
 	);
-	const usage = geminiUsageTokens(payload);
-	const transformed = {
-		id: `chatcmpl_${Date.now()}`,
-		object: "chat.completion",
-		created: Math.floor(Date.now() / 1000),
-		model: options.model ?? "",
-		choices: [
-			{
-				index: 0,
-				message: { role: "assistant", content: text },
-				finish_reason: finishReason,
-			},
-		],
-		usage: {
-			prompt_tokens: usage.promptTokens,
-			completion_tokens: usage.completionTokens,
-			total_tokens: usage.totalTokens,
-		},
-	};
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: gemini_to_openai");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -699,27 +584,20 @@ async function adaptGeminiJsonToAnthropic(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid Gemini JSON payload");
 	}
-	const text = geminiCandidateText(payload);
-	const usage = geminiUsageTokens(payload);
-	const transformed = {
-		id: `msg_${Date.now()}`,
-		type: "message",
-		role: "assistant",
-		model: options.model ?? "",
-		content: text ? [{ type: "text", text }] : [],
-		stop_reason: mapGeminiFinishReasonToAnthropic(geminiFinishReason(payload)),
-		stop_sequence: null,
-		usage: {
-			input_tokens: usage.promptTokens,
-			output_tokens: usage.completionTokens,
-		},
-	};
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"gemini_to_anthropic",
+		payload,
+		options.model,
+	);
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: gemini_to_anthropic");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -733,40 +611,20 @@ async function adaptOpenAiJsonToGemini(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid OpenAI JSON payload");
 	}
-	const choices = Array.isArray(payload.choices)
-		? (payload.choices as Record<string, unknown>[])
-		: [];
-	const firstChoice = choices[0] ?? {};
-	const message =
-		firstChoice.message && typeof firstChoice.message === "object"
-			? (firstChoice.message as Record<string, unknown>)
-			: {};
-	const text = openAiContentToText(message.content);
-	const usage =
-		payload.usage && typeof payload.usage === "object"
-			? (payload.usage as Record<string, unknown>)
-			: {};
-	const promptTokens = Number(usage.prompt_tokens ?? 0) || 0;
-	const completionTokens = Number(usage.completion_tokens ?? 0) || 0;
-	const transformed = {
-		candidates: [
-			{
-				content: { role: "model", parts: text ? [{ text }] : [] },
-				finishReason: mapOpenAiFinishReasonToGemini(firstChoice.finish_reason),
-			},
-		],
-		usageMetadata: {
-			promptTokenCount: promptTokens,
-			candidatesTokenCount: completionTokens,
-			totalTokenCount: promptTokens + completionTokens,
-		},
-	};
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"openai_to_gemini",
+		payload,
+		options.model,
+	);
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: openai_to_gemini");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -780,32 +638,20 @@ async function adaptAnthropicJsonToGemini(
 		.json()
 		.catch(() => null)) as Record<string, unknown> | null;
 	if (!payload) {
-		return options.response;
+		throw new Error("Invalid Anthropic JSON payload");
 	}
-	const text = anthropicContentToText(payload.content);
-	const usage =
-		payload.usage && typeof payload.usage === "object"
-			? (payload.usage as Record<string, unknown>)
-			: {};
-	const promptTokens = Number(usage.input_tokens ?? 0) || 0;
-	const completionTokens = Number(usage.output_tokens ?? 0) || 0;
-	const transformed = {
-		candidates: [
-			{
-				content: { role: "model", parts: text ? [{ text }] : [] },
-				finishReason: mapAnthropicStopReasonToGemini(payload.stop_reason),
-			},
-		],
-		usageMetadata: {
-			promptTokenCount: promptTokens,
-			candidatesTokenCount: completionTokens,
-			totalTokenCount: promptTokens + completionTokens,
-		},
-	};
+	const wasmTransformed = adaptChatJsonViaWasm(
+		"anthropic_to_gemini",
+		payload,
+		options.model,
+	);
+	if (!wasmTransformed) {
+		throw new Error("WASM transform failed: anthropic_to_gemini");
+	}
 	const headers = new Headers(options.response.headers);
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.delete("content-length");
-	return new Response(JSON.stringify(transformed), {
+	return new Response(JSON.stringify(wasmTransformed), {
 		status: options.response.status,
 		headers,
 	});
@@ -842,6 +688,15 @@ function adaptGeminiSseToOpenAi(options: AdaptOptions): Response {
 							newlineIndex = buffer.indexOf("\n");
 							continue;
 						}
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"gemini",
+							"openai",
+							options.model,
+						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: gemini_to_openai");
+						}
 						if (!started) {
 							started = true;
 							writeOpenAiSseChunk(controller, encoder, {
@@ -858,7 +713,7 @@ function adaptGeminiSseToOpenAi(options: AdaptOptions): Response {
 								],
 							});
 						}
-						const text = geminiCandidateText(parsed);
+						const text = typeof wasmLine.text === "string" ? wasmLine.text : "";
 						if (text) {
 							writeOpenAiSseChunk(controller, encoder, {
 								id: completionId,
@@ -870,9 +725,10 @@ function adaptGeminiSseToOpenAi(options: AdaptOptions): Response {
 								],
 							});
 						}
-						const finishReason = mapGeminiFinishReasonToOpenAi(
-							geminiFinishReason(parsed),
-						);
+						const finishReason =
+							typeof wasmLine.finishReason === "string"
+								? wasmLine.finishReason
+								: null;
 						if (finishReason && !stopped) {
 							stopped = true;
 							writeOpenAiSseChunk(controller, encoder, {
@@ -932,6 +788,15 @@ function adaptGeminiSseToAnthropic(options: AdaptOptions): Response {
 							newlineIndex = buffer.indexOf("\n");
 							continue;
 						}
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"gemini",
+							"anthropic",
+							options.model,
+						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: gemini_to_anthropic");
+						}
 						if (!started) {
 							started = true;
 							writeSseEvent(controller, encoder, "message_start", {
@@ -953,7 +818,7 @@ function adaptGeminiSseToAnthropic(options: AdaptOptions): Response {
 								content_block: { type: "text", text: "" },
 							});
 						}
-						const text = geminiCandidateText(parsed);
+						const text = typeof wasmLine.text === "string" ? wasmLine.text : "";
 						if (text) {
 							writeSseEvent(controller, encoder, "content_block_delta", {
 								type: "content_block_delta",
@@ -961,9 +826,8 @@ function adaptGeminiSseToAnthropic(options: AdaptOptions): Response {
 								delta: { type: "text_delta", text },
 							});
 						}
-						const stopReason = mapGeminiFinishReasonToAnthropic(
-							geminiFinishReason(parsed),
-						);
+						const stopReason =
+							typeof wasmLine.stopReason === "string" ? wasmLine.stopReason : null;
 						if (stopReason && !stopped) {
 							stopped = true;
 							writeSseEvent(controller, encoder, "content_block_stop", {
@@ -974,7 +838,10 @@ function adaptGeminiSseToAnthropic(options: AdaptOptions): Response {
 								type: "message_delta",
 								delta: { stop_reason: stopReason, stop_sequence: null },
 								usage: {
-									output_tokens: geminiUsageTokens(parsed).completionTokens,
+									output_tokens:
+										typeof wasmLine.outputTokens === "number"
+											? wasmLine.outputTokens
+											: 0,
 								},
 							});
 							writeSseEvent(controller, encoder, "message_stop", {
@@ -1041,18 +908,20 @@ function adaptOpenAiSseToGemini(options: AdaptOptions): Response {
 							newlineIndex = buffer.indexOf("\n");
 							continue;
 						}
-						const choices = Array.isArray(parsed.choices)
-							? (parsed.choices as Record<string, unknown>[])
-							: [];
-						const firstChoice = choices[0] ?? {};
-						const delta =
-							firstChoice.delta && typeof firstChoice.delta === "object"
-								? (firstChoice.delta as Record<string, unknown>)
-								: null;
-						const text = extractOpenAiDeltaText(delta);
-						const finishReason = mapOpenAiFinishReasonToGemini(
-							firstChoice.finish_reason,
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"openai",
+							"gemini",
+							options.model,
 						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: openai_to_gemini");
+						}
+						const text = typeof wasmLine.text === "string" ? wasmLine.text : "";
+						const finishReason =
+							typeof wasmLine.finishReason === "string"
+								? wasmLine.finishReason
+								: null;
 						if (finishReason) {
 							lastFinishReason = finishReason;
 						}
@@ -1121,14 +990,19 @@ function adaptAnthropicSseToGemini(options: AdaptOptions): Response {
 							newlineIndex = buffer.indexOf("\n");
 							continue;
 						}
+						const wasmLine = adaptSseLineViaWasm(
+							parsed,
+							"anthropic",
+							"gemini",
+							options.model,
+						);
+						if (!wasmLine) {
+							throw new Error("WASM SSE transform failed: anthropic_to_gemini");
+						}
 						const eventType =
-							typeof parsed.type === "string" ? parsed.type : "";
+							typeof wasmLine.eventType === "string" ? wasmLine.eventType : "";
 						if (eventType === "content_block_delta") {
-							const delta =
-								parsed.delta && typeof parsed.delta === "object"
-									? (parsed.delta as Record<string, unknown>)
-									: {};
-							const text = typeof delta.text === "string" ? delta.text : "";
+							const text = typeof wasmLine.text === "string" ? wasmLine.text : "";
 							if (text) {
 								writeGeminiChunk(controller, encoder, {
 									candidates: [
@@ -1140,12 +1014,10 @@ function adaptAnthropicSseToGemini(options: AdaptOptions): Response {
 							}
 						}
 						if (eventType === "message_delta") {
-							const delta =
-								parsed.delta && typeof parsed.delta === "object"
-									? (parsed.delta as Record<string, unknown>)
-									: {};
 							lastFinishReason =
-								mapAnthropicStopReasonToGemini(delta.stop_reason) ??
+								(typeof wasmLine.finishReason === "string"
+									? wasmLine.finishReason
+									: null) ??
 								lastFinishReason;
 						}
 						newlineIndex = buffer.indexOf("\n");

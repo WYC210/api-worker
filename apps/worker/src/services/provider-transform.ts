@@ -1,4 +1,13 @@
 import { safeJsonParse } from "../utils/json";
+import {
+	applyGeminiModelToPathViaWasm,
+	buildUpstreamChatRequestViaWasm,
+	detectDownstreamProviderViaWasm,
+	detectEndpointTypeViaWasm,
+	normalizeChatRequestViaWasm,
+	parseDownstreamModelViaWasm,
+	parseDownstreamStreamViaWasm,
+} from "../wasm/core";
 import type { EndpointOverrides } from "./site-metadata";
 
 export type ProviderType = "openai" | "anthropic" | "gemini";
@@ -495,56 +504,28 @@ function normalizeOpenAiInput(value: unknown): NormalizedMessage[] {
 }
 
 export function detectDownstreamProvider(path: string): ProviderType {
-	if (path.startsWith("/v1beta/")) {
-		return "gemini";
+	const provider = detectDownstreamProviderViaWasm(path);
+	if (provider === "openai" || provider === "anthropic" || provider === "gemini") {
+		return provider;
 	}
-	if (path === "/v1/messages" || path.startsWith("/v1/messages/")) {
-		return "anthropic";
-	}
-	return "openai";
+	throw new Error(`Unexpected provider from wasm: ${provider}`);
 }
 
 export function detectEndpointType(
 	provider: ProviderType,
 	path: string,
 ): EndpointType {
-	if (provider === "openai") {
-		if (path.startsWith("/v1/chat/completions")) {
-			return "chat";
-		}
-		if (path.startsWith("/v1/responses")) {
-			return "responses";
-		}
-		if (path.startsWith("/v1/embeddings")) {
-			return "embeddings";
-		}
-		if (path.startsWith("/v1/images")) {
-			return "images";
-		}
-		return "passthrough";
-	}
-	if (provider === "anthropic") {
-		if (path.startsWith("/v1/messages")) {
-			return "chat";
-		}
-		return "passthrough";
-	}
+	const endpoint = detectEndpointTypeViaWasm(provider, path);
 	if (
-		path.includes(":generateContent") ||
-		path.includes(":streamGenerateContent")
+		endpoint === "chat" ||
+		endpoint === "responses" ||
+		endpoint === "embeddings" ||
+		endpoint === "images" ||
+		endpoint === "passthrough"
 	) {
-		return "chat";
+		return endpoint;
 	}
-	if (path.includes(":embedContent") || path.includes(":batchEmbedContents")) {
-		return "embeddings";
-	}
-	if (
-		path.includes(":generateImage") ||
-		path.includes(":streamGenerateImage")
-	) {
-		return "images";
-	}
-	return "passthrough";
+	throw new Error(`Unexpected endpoint from wasm: ${endpoint}`);
 }
 
 export function parseDownstreamModel(
@@ -552,16 +533,7 @@ export function parseDownstreamModel(
 	path: string,
 	body: Record<string, unknown> | null,
 ): string | null {
-	if (provider === "gemini") {
-		const match = path.match(/\/models\/([^/:]+)(?::|\/|$)/i);
-		if (match?.[1]) {
-			return decodeURIComponent(match[1]);
-		}
-	}
-	if (body?.model !== undefined && body?.model !== null) {
-		return String(body.model);
-	}
-	return null;
+	return parseDownstreamModelViaWasm(provider, path, body);
 }
 
 export function parseDownstreamStream(
@@ -569,15 +541,7 @@ export function parseDownstreamStream(
 	path: string,
 	body: Record<string, unknown> | null,
 ): boolean {
-	if (provider === "gemini") {
-		if (
-			path.includes(":streamGenerateContent") ||
-			path.includes(":streamGenerateImage")
-		) {
-			return true;
-		}
-	}
-	return body?.stream === true;
+	return parseDownstreamStreamViaWasm(provider, path, body);
 }
 
 export function normalizeChatRequest(
@@ -587,91 +551,13 @@ export function normalizeChatRequest(
 	model: string | null,
 	isStream: boolean,
 ): NormalizedChatRequest | null {
-	if (!body) {
-		return null;
-	}
-	if (provider === "openai" && endpoint === "responses") {
-		const systemText = extractSystemText(body.instructions);
-		const messages = normalizeOpenAiInput(body.input);
-		const outputMessages = systemText
-			? [
-					{ role: "system", content: systemText } as NormalizedMessage,
-					...messages,
-				]
-			: messages;
-		return {
-			model,
-			stream: isStream,
-			messages: outputMessages,
-			tools: normalizeToolsFromOpenAI(body.tools),
-			toolChoice: body.tool_choice ?? null,
-			temperature: toNumber(body.temperature),
-			topP: toNumber(body.top_p),
-			maxTokens: toNumber(body.max_output_tokens ?? body.max_tokens),
-			responseFormat: body.response_format ?? null,
-		};
-	}
-	if (provider === "openai") {
-		return {
-			model,
-			stream: isStream,
-			messages: normalizeOpenAiMessages(body.messages),
-			tools: normalizeToolsFromOpenAI(body.tools),
-			toolChoice: body.tool_choice ?? null,
-			temperature: toNumber(body.temperature),
-			topP: toNumber(body.top_p),
-			maxTokens: toNumber(body.max_tokens),
-			responseFormat: body.response_format ?? null,
-		};
-	}
-	if (provider === "anthropic") {
-		const systemText = extractSystemText(body.system);
-		const messages = normalizeAnthropicMessages(body.messages);
-		const outputMessages = systemText
-			? [
-					{ role: "system", content: systemText } as NormalizedMessage,
-					...messages,
-				]
-			: messages;
-		return {
-			model,
-			stream: isStream,
-			messages: outputMessages,
-			tools: normalizeToolsFromAnthropic(body.tools),
-			toolChoice: body.tool_choice ?? null,
-			temperature: toNumber(body.temperature),
-			topP: toNumber(body.top_p),
-			maxTokens: toNumber(body.max_tokens),
-			responseFormat: null,
-		};
-	}
-	const systemText = extractSystemText(
-		body.system_instruction ?? body.systemInstruction,
-	);
-	const messages = normalizeGeminiMessages(body.contents);
-	const outputMessages = systemText
-		? [
-				{ role: "system", content: systemText } as NormalizedMessage,
-				...messages,
-			]
-		: messages;
-	const generationConfig =
-		body.generationConfig && typeof body.generationConfig === "object"
-			? (body.generationConfig as Record<string, unknown>)
-			: {};
-	return {
+	return normalizeChatRequestViaWasm<NormalizedChatRequest>(
+		body,
+		provider,
+		endpoint,
 		model,
-		stream: isStream,
-		messages: outputMessages,
-		tools: normalizeToolsFromGemini(body.tools),
-		toolChoice: null,
-		temperature: toNumber(generationConfig.temperature),
-		topP: toNumber(generationConfig.topP ?? generationConfig.top_p),
-		maxTokens: toNumber(
-			generationConfig.maxOutputTokens ?? generationConfig.max_tokens,
-		),
-		responseFormat: null,
-	};
+		isStream,
+	);
 }
 
 export function normalizeEmbeddingRequest(
@@ -769,222 +655,14 @@ export function buildUpstreamChatRequest(
 	isStream: boolean,
 	endpointOverrides: EndpointOverrides,
 ): UpstreamRequest | null {
-	if (provider === "openai") {
-		const override = resolveOverride(endpointOverrides.chat_url, model);
-		const path =
-			override?.path ??
-			(endpoint === "responses" ? "/v1/responses" : "/v1/chat/completions");
-		const body: Record<string, unknown> = {
-			model,
-			messages: normalized.messages.map((msg) => {
-				if (msg.role === "tool") {
-					return {
-						role: "tool",
-						content: msg.content,
-						tool_call_id: msg.toolCallId ?? "",
-					};
-				}
-				const message: Record<string, unknown> = {
-					role: msg.role,
-					content: msg.content.length > 0 ? msg.content : null,
-				};
-				if (msg.role === "assistant" && msg.toolCalls?.length) {
-					message.tool_calls = buildOpenAiToolCalls(msg.toolCalls);
-				}
-				return message;
-			}),
-		};
-		if (normalized.tools.length > 0) {
-			body.tools = normalized.tools.map((tool) => ({
-				type: "function",
-				function: {
-					name: tool.name,
-					description: tool.description ?? "",
-					parameters: tool.parameters ?? {},
-				},
-			}));
-		}
-		if (normalized.toolChoice !== null) {
-			body.tool_choice = normalized.toolChoice;
-		}
-		if (normalized.temperature !== null) {
-			body.temperature = normalized.temperature;
-		}
-		if (normalized.topP !== null) {
-			body.top_p = normalized.topP;
-		}
-		if (normalized.maxTokens !== null) {
-			body.max_tokens = normalized.maxTokens;
-		}
-		if (normalized.responseFormat !== null) {
-			body.response_format = normalized.responseFormat;
-		}
-		if (isStream) {
-			body.stream = true;
-		}
-		return {
-			path,
-			fallbackPath: endpoint === "responses" ? "/responses" : undefined,
-			absoluteUrl: override?.absolute,
-			body,
-		};
-	}
-	if (provider === "anthropic") {
-		const override = resolveOverride(endpointOverrides.chat_url, model);
-		const path = override?.path ?? "/v1/messages";
-		const systemText = normalized.messages
-			.filter((msg) => msg.role === "system")
-			.map((msg) => msg.content)
-			.join("\n");
-		const messages: Array<Record<string, unknown>> = [];
-		normalized.messages.forEach((msg) => {
-			if (msg.role === "system") {
-				return;
-			}
-			if (msg.role === "tool") {
-				messages.push({
-					role: "user",
-					content: [
-						{
-							type: "tool_result",
-							tool_use_id: msg.toolCallId ?? "",
-							content: msg.content,
-						},
-					],
-				});
-				return;
-			}
-			const blocks: Array<Record<string, unknown>> = [];
-			if (msg.content.length > 0) {
-				blocks.push({ type: "text", text: msg.content });
-			}
-			if (msg.role === "assistant" && msg.toolCalls?.length) {
-				msg.toolCalls.forEach((call) => {
-					blocks.push({
-						type: "tool_use",
-						id: call.id,
-						name: call.name,
-						input: normalizeToolArgs(call.args),
-					});
-				});
-			}
-			messages.push({
-				role: msg.role,
-				content:
-					blocks.length === 1 && blocks[0].type === "text"
-						? blocks[0].text
-						: blocks,
-			});
-		});
-		const body: Record<string, unknown> = {
-			model,
-			system: systemText || undefined,
-			messages,
-		};
-		if (normalized.tools.length > 0) {
-			body.tools = normalized.tools.map((tool) => ({
-				name: tool.name,
-				description: tool.description ?? "",
-				input_schema: tool.parameters ?? {},
-			}));
-		}
-		if (normalized.toolChoice) {
-			body.tool_choice = normalized.toolChoice;
-		}
-		body.max_tokens = normalized.maxTokens ?? 1024;
-		if (normalized.temperature !== null) {
-			body.temperature = normalized.temperature;
-		}
-		if (normalized.topP !== null) {
-			body.top_p = normalized.topP;
-		}
-		if (isStream) {
-			body.stream = true;
-		}
-		return {
-			path,
-			absoluteUrl: override?.absolute,
-			body,
-		};
-	}
-	const override = resolveOverride(endpointOverrides.chat_url, model);
-	const path = override?.path ?? `/v1beta/models/${model}:generateContent`;
-	const systemText = normalized.messages
-		.filter((msg) => msg.role === "system")
-		.map((msg) => msg.content)
-		.join("\n");
-	const contents: Array<Record<string, unknown>> = [];
-	normalized.messages.forEach((msg) => {
-		if (msg.role === "system") {
-			return;
-		}
-		if (msg.role === "tool") {
-			contents.push({
-				role: "user",
-				parts: [
-					{
-						functionResponse: {
-							name: msg.toolCallId ?? "",
-							response: { result: msg.content },
-						},
-					},
-				],
-			});
-			return;
-		}
-		const role = msg.role === "assistant" ? "model" : "user";
-		const parts: Array<Record<string, unknown>> = [];
-		if (msg.content.length > 0) {
-			parts.push({ text: msg.content });
-		}
-		if (msg.role === "assistant" && msg.toolCalls?.length) {
-			msg.toolCalls.forEach((call) => {
-				parts.push({
-					functionCall: {
-						name: call.name,
-						args: normalizeToolArgs(call.args),
-					},
-				});
-			});
-		}
-		contents.push({ role, parts });
-	});
-	const body: Record<string, unknown> = {
-		contents,
-	};
-	if (systemText) {
-		body.system_instruction = { parts: [{ text: systemText }] };
-	}
-	if (normalized.tools.length > 0) {
-		body.tools = [
-			{
-				functionDeclarations: normalized.tools.map((tool) => ({
-					name: tool.name,
-					description: tool.description ?? "",
-					parameters: tool.parameters ?? {},
-				})),
-			},
-		];
-	}
-	if (
-		normalized.temperature !== null ||
-		normalized.topP !== null ||
-		normalized.maxTokens !== null
-	) {
-		body.generationConfig = {
-			temperature: normalized.temperature ?? undefined,
-			topP: normalized.topP ?? undefined,
-			maxOutputTokens: normalized.maxTokens ?? undefined,
-		};
-	}
-	const finalPath = isStream
-		? path.replace(":generateContent", ":streamGenerateContent")
-		: path;
-	return {
-		path: finalPath,
-		absoluteUrl: override?.absolute,
-		body,
-	};
+	return buildUpstreamChatRequestViaWasm<UpstreamRequest>(
+		normalized as unknown as Record<string, unknown>,
+		provider,
+		model,
+		endpoint,
+		isStream,
+		endpointOverrides as unknown as Record<string, unknown>,
+	);
 }
 
 export function buildUpstreamEmbeddingRequest(
@@ -1081,8 +759,5 @@ export function applyGeminiModelToPath(
 	path: string,
 	model: string | null,
 ): string {
-	if (!model) {
-		return path;
-	}
-	return applyModelToGeminiPath(path, model);
+	return applyGeminiModelToPathViaWasm(path, model);
 }

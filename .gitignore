@@ -9,3 +9,5 @@ tests/
 
 .helloagents/plan
 .helloagents/archive
+apps/worker/wasm/target
+

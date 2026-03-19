@@ -1,4 +1,9 @@
 import { safeJsonParse } from "./json";
+import {
+	normalizeUsageViaWasm,
+	parseUsageFromJsonViaWasm,
+	parseUsageFromSseLineViaWasm,
+} from "../wasm/core";
 
 export type NormalizedUsage = {
 	totalTokens: number;
@@ -39,84 +44,11 @@ function pickNumber(...values: Array<unknown>): number | null {
 }
 
 export function normalizeUsage(raw: unknown): NormalizedUsage | null {
-	if (!raw || typeof raw !== "object") {
-		return null;
-	}
-	const data = raw as Record<string, unknown>;
-	const promptTokens = pickNumber(
-		data.prompt_tokens,
-		data.promptTokens,
-		data.input_tokens,
-		data.inputTokens,
-	);
-	const completionTokens = pickNumber(
-		data.completion_tokens,
-		data.completionTokens,
-		data.output_tokens,
-		data.outputTokens,
-	);
-	let totalTokens = pickNumber(
-		data.total_tokens,
-		data.totalTokens,
-		data.total,
-		data.tokens,
-		data.token_count,
-	);
-	if (
-		totalTokens === null &&
-		(promptTokens !== null || completionTokens !== null)
-	) {
-		totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0);
-	}
-	if (totalTokens === null) {
-		return null;
-	}
-	return {
-		totalTokens,
-		promptTokens: promptTokens ?? 0,
-		completionTokens: completionTokens ?? 0,
-	};
+	return normalizeUsageViaWasm(raw);
 }
 
 export function parseUsageFromJson(payload: unknown): NormalizedUsage | null {
-	if (!payload || typeof payload !== "object") {
-		return null;
-	}
-	const data = payload as Record<string, unknown>;
-	const usage =
-		data.usage ??
-		(data.response && typeof data.response === "object"
-			? (data.response as Record<string, unknown>).usage
-			: null) ??
-		(data.data && typeof data.data === "object"
-			? (data.data as Record<string, unknown>).usage
-			: null) ??
-		(data.message && typeof data.message === "object"
-			? (data.message as Record<string, unknown>).usage
-			: null);
-	const normalizedUsage = normalizeUsage(usage);
-	if (normalizedUsage) {
-		return normalizedUsage;
-	}
-	const usageMetadata =
-		data.usageMetadata ??
-		data.usage_metadata ??
-		(data.response && typeof data.response === "object"
-			? (data.response as Record<string, unknown>).usageMetadata
-			: null);
-	if (!usageMetadata || typeof usageMetadata !== "object") {
-		return null;
-	}
-	const record = usageMetadata as Record<string, unknown>;
-	const mapped = {
-		prompt_tokens: record.promptTokenCount ?? record.prompt_tokens,
-		completion_tokens:
-			record.candidatesTokenCount ??
-			record.completionTokenCount ??
-			record.output_tokens,
-		total_tokens: record.totalTokenCount ?? record.total_tokens,
-	};
-	return normalizeUsage(mapped);
+	return parseUsageFromJsonViaWasm(payload);
 }
 
 export function parseUsageFromHeaders(
@@ -214,14 +146,15 @@ export async function parseUsageFromSse(
 						newlineIndex = buffer.indexOf("\n");
 						continue;
 					}
-					const parsed = safeJsonParse<unknown>(payload, null);
-					const candidate = parseUsageFromJson(parsed);
-					if (candidate) {
-						usage = candidate;
+					const wasmCandidate = parseUsageFromSseLineViaWasm(line);
+					if (wasmCandidate) {
+						usage = wasmCandidate;
 						if (mode === "lite") {
 							await reader.cancel();
 							return { usage, firstTokenLatencyMs };
 						}
+						newlineIndex = buffer.indexOf("\n");
+						continue;
 					}
 				}
 			}
@@ -239,10 +172,10 @@ export async function parseUsageFromSse(
 			if (mode === "lite" && !payloadMayContainUsage(payload)) {
 				return { usage, firstTokenLatencyMs };
 			}
-			const parsed = safeJsonParse<unknown>(payload, null);
-			const candidate = parseUsageFromJson(parsed);
-			if (candidate) {
-				usage = candidate;
+			const wasmCandidate = parseUsageFromSseLineViaWasm(remaining);
+			if (wasmCandidate) {
+				usage = wasmCandidate;
+				return { usage, firstTokenLatencyMs };
 			}
 		}
 	}

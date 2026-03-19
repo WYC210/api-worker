@@ -5,7 +5,8 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
-		"db:migrate": "wrangler d1 migrations apply DB --local"
+		"db:migrate": "wrangler d1 migrations apply DB --local",
+		"build:wasm": "cargo build --manifest-path wasm/Cargo.toml --release --target wasm32-unknown-unknown && wasm-bindgen wasm/target/wasm32-unknown-unknown/release/worker_wasm_core.wasm --target web --out-dir src/wasm/generated"
 	},
 	"dependencies": {
 		"hono": "^4.2.7"

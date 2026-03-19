@@ -1,5 +1,11 @@
 {
-	"exclude": ["**/dist", "helloagents", "tests", "**/node_modules"],
+	"exclude": [
+		"**/dist",
+		"helloagents",
+		"tests",
+		"**/node_modules",
+		"apps/worker/wasm/target"
+	],
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "ESNext",

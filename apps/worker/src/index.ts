@@ -15,8 +15,10 @@ import siteRoutes from "./routes/sites";
 import tokenRoutes from "./routes/tokens";
 import usageRoutes from "./routes/usage";
 import { handleUsageQueue } from "./services/usage-queue";
+import { warmupWasmCore } from "./wasm/core";
 
 const app = new Hono<AppEnv>({ strict: false });
+warmupWasmCore();
 app.use(
 	"/api/*",
 	cors({

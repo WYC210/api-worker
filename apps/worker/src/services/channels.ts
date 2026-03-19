@@ -1,5 +1,6 @@
 import { extractModels } from "./channel-models";
 import type { ChannelRecord } from "./channel-types";
+import { createWeightedOrderIndicesViaWasm } from "../wasm/core";
 
 export type { ModelEntry } from "./channel-models";
 export type { ChannelRecord } from "./channel-types";
@@ -15,16 +16,17 @@ export function createWeightedOrder(
 		...channel,
 		weight: Math.max(1, Number(channel.weight) || 1),
 	}));
-	const ordered: ChannelRecord[] = [];
-	while (pool.length > 0) {
-		const total = pool.reduce((sum, channel) => sum + channel.weight, 0);
-		let roll = Math.random() * total;
-		const index = pool.findIndex((channel) => {
-			roll -= channel.weight;
-			return roll <= 0;
-		});
-		const [selected] = pool.splice(index < 0 ? 0 : index, 1);
-		ordered.push(selected);
+	const wasmOrder = createWeightedOrderIndicesViaWasm(
+		pool.map((channel) => channel.weight),
+	);
+	if (!wasmOrder || wasmOrder.length !== pool.length) {
+		throw new Error("Invalid weighted order from wasm");
 	}
-	return ordered;
+	const mapped = wasmOrder
+		.map((index) => pool[index])
+		.filter((item): item is ChannelRecord & { weight: number } => Boolean(item));
+	if (mapped.length !== pool.length) {
+		throw new Error("Weighted order index out of range");
+	}
+	return mapped;
 }
