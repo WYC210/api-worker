@@ -13,6 +13,58 @@ Cloudflare Workers + D1 的 API 网关与管理台一体化项目。
 - 提供 OpenAI 兼容代理入口（`/v1/*`、`/v1beta/*`）
 - 提供管理台用于渠道、模型、令牌、日志和系统设置维护
 
+## 部署
+
+### 部署前环境变量
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+说明：
+
+- 创建 `CLOUDFLARE_API_TOKEN` 时，建议使用 **Account Token**，资源范围限制到目标账号（`CLOUDFLARE_ACCOUNT_ID` 对应账号）。
+- 建议最小权限（Edit）：`Workers Scripts`、`D1`、`Queues`。
+- 可选权限：`Workers Routes`（仅需要管理路由时）、`Workers Tail`（仅需要日志 tail 调试时）、`Workers Observability`（仅需要通过 Observability 能力查询/分析日志与追踪时）。
+
+### GitHub Actions 自动部署
+
+工作流：`.github/workflows/deploy.yml`（`Deploy SPA CF Workers[Worker一体化部署]`）
+
+触发方式：
+
+- `push` 到 `main/master` 且命中 `apps/ui/**` 或 `apps/worker/**`
+- `workflow_dispatch` 手动触发
+- `repository_dispatch`（`deploy-spa-button`）
+
+需要配置的 Secrets：
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+可选变量：
+
+- `SPA_DEPLOY`：自动部署开关（`true` / `false`）
+
+### 本地部署脚本（不执行远程 deploy）
+
+```bash
+node scripts/deploy.mjs init
+node scripts/deploy.mjs update
+```
+
+等价脚本：
+
+```bash
+bun run deploy:init
+bun run deploy:update
+```
+
+说明：
+
+- `init`：全量初始化流程（包含本地迁移）
+- `update`：按参数执行构建与本地迁移判断
+- 该脚本用于本地复刻流程，不会执行远程 `wrangler deploy`
+
 ## 技术栈
 
 - Runtime: Cloudflare Workers
@@ -94,16 +146,6 @@ bun run check
 
 ## 配置说明
 
-### 本地环境变量（`.env`）
-
-可参考根目录 `.env.example`：
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-说明：
-
-- 上述两个变量主要用于本地部署脚本和 CI 调用 Cloudflare API。
 - 代理运行时参数（超时、重试、usage 解析、队列开关等）当前以 D1 `settings` 表为准，通过管理台“系统设置”或 `PUT /api/settings` 维护。
 - 若未设置，会使用代码默认值（见 `apps/worker/src/services/settings.ts` 常量）。
 
@@ -125,47 +167,6 @@ bun run check
 - `/v1`
 
 `apps/ui/src/core/constants.ts` 支持 `VITE_API_BASE`，用于覆盖前端请求基址（默认同源）。
-
-## 部署
-
-### GitHub Actions 自动部署
-
-工作流：`.github/workflows/deploy.yml`（`Deploy SPA CF Workers[Worker一体化部署]`）
-
-触发方式：
-
-- `push` 到 `main/master` 且命中 `apps/ui/**` 或 `apps/worker/**`
-- `workflow_dispatch` 手动触发
-- `repository_dispatch`（`deploy-spa-button`）
-
-需要配置的 Secrets：
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-可选变量：
-
-- `SPA_DEPLOY`：自动部署开关（`true` / `false`）
-
-### 本地部署脚本（不执行远程 deploy）
-
-```bash
-node scripts/deploy.mjs init
-node scripts/deploy.mjs update --target auto --migrate auto
-```
-
-等价脚本：
-
-```bash
-bun run deploy:init
-bun run deploy:update -- --target auto --migrate auto
-```
-
-说明：
-
-- `init`：全量初始化流程（包含本地迁移）
-- `update`：按参数执行构建与本地迁移判断
-- 该脚本用于本地复刻流程，不会执行远程 `wrangler deploy`
 
 ## API 概览
 
