@@ -355,79 +355,15 @@ jobs:
           echo "检查并创建 KV Namespace..."
           KV_NAMESPACE_TITLE="api-worker-hot"
           KV_LIST_RAW=$(bunx wrangler kv namespace list --config apps/worker/wrangler.toml 2>/dev/null || true)
-          KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node - <<'NODE'
-          const raw = process.env.KV_LIST_RAW || "";
-          const title = (process.env.KV_NAMESPACE_TITLE || "").toLowerCase();
-          const idPattern = /[0-9a-f]{32}/ig;
-          const lines = raw.split(/\r?\n/);
-          let found = "";
-          for (const line of lines) {
-            if (!line.toLowerCase().includes(title)) {
-              continue;
-            }
-            const match = line.match(idPattern);
-            if (match && match[0]) {
-              found = match[0].toLowerCase();
-              break;
-            }
-          }
-          if (!found && title) {
-            const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const nearby = new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`, "i");
-            const m = raw.toLowerCase().match(nearby);
-            if (m && m[1]) {
-              found = m[1].toLowerCase();
-            }
-          }
-          process.stdout.write(found);
-          NODE
-          )
+          KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node -e 'const raw=process.env.KV_LIST_RAW||"";const title=(process.env.KV_NAMESPACE_TITLE||"").toLowerCase();const idPattern=/[0-9a-f]{32}/ig;const lines=raw.split(/\r?\n/);let found="";for(const line of lines){if(!line.toLowerCase().includes(title))continue;const match=line.match(idPattern);if(match&&match[0]){found=match[0].toLowerCase();break;}}if(!found&&title){const escapedTitle=title.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");const nearby=new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`,"i");const m=raw.toLowerCase().match(nearby);if(m&&m[1])found=m[1].toLowerCase();}process.stdout.write(found);')
 
           if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
             CREATE_OUTPUT=$(bunx wrangler kv namespace create "$KV_NAMESPACE_TITLE" --config apps/worker/wrangler.toml 2>&1)
-            KV_ID=$(CREATE_OUTPUT="$CREATE_OUTPUT" node - <<'NODE'
-            const raw = process.env.CREATE_OUTPUT || "";
-            const exact = raw.match(/^\s*id\s*=\s*"([0-9a-f]{32})"/im);
-            if (exact && exact[1]) {
-              process.stdout.write(exact[1].toLowerCase());
-              process.exit(0);
-            }
-            const any = raw.match(/\b([0-9a-f]{32})\b/i);
-            if (any && any[1]) {
-              process.stdout.write(any[1].toLowerCase());
-            }
-            NODE
-            )
+            KV_ID=$(CREATE_OUTPUT="$CREATE_OUTPUT" node -e 'const raw=process.env.CREATE_OUTPUT||"";const exact=raw.match(/^\s*id\s*=\s*"([0-9a-f]{32})"/im);if(exact&&exact[1]){process.stdout.write(exact[1].toLowerCase());process.exit(0);}const any=raw.match(/\b([0-9a-f]{32})\b/i);if(any&&any[1])process.stdout.write(any[1].toLowerCase());')
 
             if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
               KV_LIST_RAW=$(bunx wrangler kv namespace list --config apps/worker/wrangler.toml 2>/dev/null || true)
-              KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node - <<'NODE'
-              const raw = process.env.KV_LIST_RAW || "";
-              const title = (process.env.KV_NAMESPACE_TITLE || "").toLowerCase();
-              const idPattern = /[0-9a-f]{32}/ig;
-              const lines = raw.split(/\r?\n/);
-              let found = "";
-              for (const line of lines) {
-                if (!line.toLowerCase().includes(title)) {
-                  continue;
-                }
-                const match = line.match(idPattern);
-                if (match && match[0]) {
-                  found = match[0].toLowerCase();
-                  break;
-                }
-              }
-              if (!found && title) {
-                const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                const nearby = new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`, "i");
-                const m = raw.toLowerCase().match(nearby);
-                if (m && m[1]) {
-                  found = m[1].toLowerCase();
-                }
-              }
-              process.stdout.write(found);
-              NODE
-              )
+              KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node -e 'const raw=process.env.KV_LIST_RAW||"";const title=(process.env.KV_NAMESPACE_TITLE||"").toLowerCase();const idPattern=/[0-9a-f]{32}/ig;const lines=raw.split(/\r?\n/);let found="";for(const line of lines){if(!line.toLowerCase().includes(title))continue;const match=line.match(idPattern);if(match&&match[0]){found=match[0].toLowerCase();break;}}if(!found&&title){const escapedTitle=title.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");const nearby=new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`,"i");const m=raw.toLowerCase().match(nearby);if(m&&m[1])found=m[1].toLowerCase();}process.stdout.write(found);')
             fi
           fi
 
@@ -615,79 +551,15 @@ jobs:
           echo "检查并创建 KV Namespace..."
           KV_NAMESPACE_TITLE="api-worker-hot"
           KV_LIST_RAW=$(bunx wrangler kv namespace list --config apps/worker/wrangler.toml 2>/dev/null || true)
-          KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node - <<'NODE'
-          const raw = process.env.KV_LIST_RAW || "";
-          const title = (process.env.KV_NAMESPACE_TITLE || "").toLowerCase();
-          const idPattern = /[0-9a-f]{32}/ig;
-          const lines = raw.split(/\r?\n/);
-          let found = "";
-          for (const line of lines) {
-            if (!line.toLowerCase().includes(title)) {
-              continue;
-            }
-            const match = line.match(idPattern);
-            if (match && match[0]) {
-              found = match[0].toLowerCase();
-              break;
-            }
-          }
-          if (!found && title) {
-            const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const nearby = new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`, "i");
-            const m = raw.toLowerCase().match(nearby);
-            if (m && m[1]) {
-              found = m[1].toLowerCase();
-            }
-          }
-          process.stdout.write(found);
-          NODE
-          )
+          KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node -e 'const raw=process.env.KV_LIST_RAW||"";const title=(process.env.KV_NAMESPACE_TITLE||"").toLowerCase();const idPattern=/[0-9a-f]{32}/ig;const lines=raw.split(/\r?\n/);let found="";for(const line of lines){if(!line.toLowerCase().includes(title))continue;const match=line.match(idPattern);if(match&&match[0]){found=match[0].toLowerCase();break;}}if(!found&&title){const escapedTitle=title.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");const nearby=new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`,"i");const m=raw.toLowerCase().match(nearby);if(m&&m[1])found=m[1].toLowerCase();}process.stdout.write(found);')
 
           if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
             CREATE_OUTPUT=$(bunx wrangler kv namespace create "$KV_NAMESPACE_TITLE" --config apps/worker/wrangler.toml 2>&1)
-            KV_ID=$(CREATE_OUTPUT="$CREATE_OUTPUT" node - <<'NODE'
-            const raw = process.env.CREATE_OUTPUT || "";
-            const exact = raw.match(/^\s*id\s*=\s*"([0-9a-f]{32})"/im);
-            if (exact && exact[1]) {
-              process.stdout.write(exact[1].toLowerCase());
-              process.exit(0);
-            }
-            const any = raw.match(/\b([0-9a-f]{32})\b/i);
-            if (any && any[1]) {
-              process.stdout.write(any[1].toLowerCase());
-            }
-            NODE
-            )
+            KV_ID=$(CREATE_OUTPUT="$CREATE_OUTPUT" node -e 'const raw=process.env.CREATE_OUTPUT||"";const exact=raw.match(/^\s*id\s*=\s*"([0-9a-f]{32})"/im);if(exact&&exact[1]){process.stdout.write(exact[1].toLowerCase());process.exit(0);}const any=raw.match(/\b([0-9a-f]{32})\b/i);if(any&&any[1])process.stdout.write(any[1].toLowerCase());')
 
             if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
               KV_LIST_RAW=$(bunx wrangler kv namespace list --config apps/worker/wrangler.toml 2>/dev/null || true)
-              KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node - <<'NODE'
-              const raw = process.env.KV_LIST_RAW || "";
-              const title = (process.env.KV_NAMESPACE_TITLE || "").toLowerCase();
-              const idPattern = /[0-9a-f]{32}/ig;
-              const lines = raw.split(/\r?\n/);
-              let found = "";
-              for (const line of lines) {
-                if (!line.toLowerCase().includes(title)) {
-                  continue;
-                }
-                const match = line.match(idPattern);
-                if (match && match[0]) {
-                  found = match[0].toLowerCase();
-                  break;
-                }
-              }
-              if (!found && title) {
-                const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                const nearby = new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`, "i");
-                const m = raw.toLowerCase().match(nearby);
-                if (m && m[1]) {
-                  found = m[1].toLowerCase();
-                }
-              }
-              process.stdout.write(found);
-              NODE
-              )
+              KV_ID=$(KV_LIST_RAW="$KV_LIST_RAW" KV_NAMESPACE_TITLE="$KV_NAMESPACE_TITLE" node -e 'const raw=process.env.KV_LIST_RAW||"";const title=(process.env.KV_NAMESPACE_TITLE||"").toLowerCase();const idPattern=/[0-9a-f]{32}/ig;const lines=raw.split(/\r?\n/);let found="";for(const line of lines){if(!line.toLowerCase().includes(title))continue;const match=line.match(idPattern);if(match&&match[0]){found=match[0].toLowerCase();break;}}if(!found&&title){const escapedTitle=title.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");const nearby=new RegExp(`${escapedTitle}[\\s\\S]{0,120}([0-9a-f]{32})`,"i");const m=raw.toLowerCase().match(nearby);if(m&&m[1])found=m[1].toLowerCase();}process.stdout.write(found);')
             fi
           fi
 
