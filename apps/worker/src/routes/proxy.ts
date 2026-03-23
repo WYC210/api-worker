@@ -1740,6 +1740,16 @@ type AttemptBindingResult = {
 	upstreamRequestId: string | null;
 };
 
+type AttemptBindingPolicy = {
+	fallbackEnabled: boolean;
+	fallbackThreshold: number;
+};
+
+type AttemptBindingState = {
+	forceLocalDirect: boolean;
+	bindingFailureCount: number;
+};
+
 async function fetchWithTimeoutLocal(
 	url: string,
 	init: RequestInit,
@@ -1799,10 +1809,11 @@ function normalizeUpstreamRequestIdFromHeaders(headers: HeaderLookup): string | 
 async function executeAttemptViaWorker(
 	c: { env: AppEnv["Bindings"] },
 	input: AttemptBindingRequest,
+	policy: AttemptBindingPolicy,
+	state: AttemptBindingState,
 ): Promise<AttemptBindingResult> {
 	const started = Date.now();
-	const binding = c.env.ATTEMPT_WORKER;
-	if (!binding) {
+	const executeLocalDirect = async (): Promise<AttemptBindingResult> => {
 		let response = await fetchWithTimeoutLocal(
 			input.target,
 			{
@@ -1831,26 +1842,45 @@ async function executeAttemptViaWorker(
 			latencyMs: Date.now() - started,
 			upstreamRequestId: normalizeUpstreamRequestIdFromHeaders(response.headers),
 		};
-	}
-	const response = await binding.fetch("https://attempt-worker/internal/attempt", {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-		},
-		body: JSON.stringify(input),
-	});
-	const responsePath =
-		response.headers.get(ATTEMPT_BINDING_RESPONSE_PATH_HEADER) ??
-		input.responsePath;
-	const latencyMs = parseLatencyHeader(
-		response.headers.get(ATTEMPT_BINDING_LATENCY_HEADER),
-	);
-	return {
-		response: response as unknown as Response,
-		responsePath,
-		latencyMs,
-		upstreamRequestId: normalizeUpstreamRequestIdFromHeaders(response.headers),
 	};
+
+	const binding = c.env.ATTEMPT_WORKER;
+	if (!binding || state.forceLocalDirect) {
+		return executeLocalDirect();
+	}
+	try {
+		const response = await binding.fetch(
+			"https://attempt-worker/internal/attempt",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+				},
+				body: JSON.stringify(input),
+			},
+		);
+		const responsePath =
+			response.headers.get(ATTEMPT_BINDING_RESPONSE_PATH_HEADER) ??
+			input.responsePath;
+		const latencyMs = parseLatencyHeader(
+			response.headers.get(ATTEMPT_BINDING_LATENCY_HEADER),
+		);
+		return {
+			response: response as unknown as Response,
+			responsePath,
+			latencyMs,
+			upstreamRequestId: normalizeUpstreamRequestIdFromHeaders(response.headers),
+		};
+	} catch (error) {
+		if (!policy.fallbackEnabled) {
+			throw error;
+		}
+		state.bindingFailureCount += 1;
+		if (state.bindingFailureCount >= policy.fallbackThreshold) {
+			state.forceLocalDirect = true;
+		}
+		return executeLocalDirect();
+	}
 }
 
 /**
@@ -1879,6 +1909,17 @@ proxy.all("/*", tokenAuth, async (c) => {
 		getCacheConfig(db, c.env.CACHE_VERSION_STORE),
 		getProxyRuntimeSettings(db),
 	]);
+	const attemptBindingPolicy: AttemptBindingPolicy = {
+		fallbackEnabled: runtimeSettings.attempt_worker_fallback_enabled,
+		fallbackThreshold: Math.max(
+			1,
+			Math.floor(runtimeSettings.attempt_worker_fallback_threshold),
+		),
+	};
+	const attemptBindingState: AttemptBindingState = {
+		forceLocalDirect: false,
+		bindingFailureCount: 0,
+	};
 	const requestPath = normalizeIncomingRequestPath(c.req.path).path;
 	const requestText = await c.req.text();
 	let parsedBody = requestText
@@ -2653,7 +2694,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				timeoutMs: upstreamTimeoutMs,
 				responsePath: upstreamRequestPath,
 				fallbackPath: upstreamFallbackPath,
-			});
+			}, attemptBindingPolicy, attemptBindingState);
 
 			if (shouldHandleStreamOptions && streamOptionsInjected && !response.ok) {
 				const details = await extractErrorDetails(response);
@@ -2668,7 +2709,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 						timeoutMs: upstreamTimeoutMs,
 						responsePath: upstreamRequestPath,
 						fallbackPath: upstreamFallbackPath,
-					});
+					}, attemptBindingPolicy, attemptBindingState);
 					response = retried.response;
 					responsePath = retried.responsePath;
 					attemptLatencyMs = retried.latencyMs;

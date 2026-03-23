@@ -36,6 +36,8 @@ const DEFAULT_PROXY_RETRY_MAX_RETRIES = 3;
 const DEFAULT_PROXY_USAGE_QUEUE_ENABLED = true;
 const DEFAULT_USAGE_QUEUE_DAILY_LIMIT = 10000;
 const DEFAULT_USAGE_QUEUE_DIRECT_WRITE_RATIO = 0.5;
+const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED = false;
+const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD = 2;
 const DEFAULT_ATTEMPT_LOG_ENABLED = true;
 const DEFAULT_ATTEMPT_LOG_RETENTION_DAYS = 30;
 const CACHE_CONFIG_TTL_MS = 0;
@@ -75,6 +77,10 @@ const PROXY_STREAM_OPTIONS_CAPABILITY_TTL_KEY =
 const PROXY_USAGE_QUEUE_ENABLED_KEY = "proxy_usage_queue_enabled";
 const USAGE_QUEUE_DAILY_LIMIT_KEY = "usage_queue_daily_limit";
 const USAGE_QUEUE_DIRECT_WRITE_RATIO_KEY = "usage_queue_direct_write_ratio";
+const PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED_KEY =
+	"proxy_attempt_worker_fallback_enabled";
+const PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY =
+	"proxy_attempt_worker_fallback_threshold";
 const ATTEMPT_LOG_ENABLED_KEY = "attempt_log_enabled";
 const ATTEMPT_LOG_RETENTION_DAYS_KEY = "attempt_log_retention_days";
 
@@ -89,6 +95,8 @@ export type RuntimeProxyConfig = {
 	usage_queue_enabled: boolean;
 	usage_queue_daily_limit: number;
 	usage_queue_direct_write_ratio: number;
+	attempt_worker_fallback_enabled: boolean;
+	attempt_worker_fallback_threshold: number;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
 	usage_queue_bound: boolean;
@@ -109,6 +117,8 @@ export type ProxyRuntimeSettings = {
 	usage_queue_enabled: boolean;
 	usage_queue_daily_limit: number;
 	usage_queue_direct_write_ratio: number;
+	attempt_worker_fallback_enabled: boolean;
+	attempt_worker_fallback_threshold: number;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
 };
@@ -439,6 +449,14 @@ export async function getProxyRuntimeSettings(
 		settings[USAGE_QUEUE_DIRECT_WRITE_RATIO_KEY] ?? null,
 		DEFAULT_USAGE_QUEUE_DIRECT_WRITE_RATIO,
 	);
+	const attemptWorkerFallbackEnabled = parseBooleanSetting(
+		settings[PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED_KEY] ?? null,
+		DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED,
+	);
+	const attemptWorkerFallbackThreshold = parsePositiveSetting(
+		settings[PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY] ?? null,
+		DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD,
+	);
 	const attemptLogEnabled = parseBooleanSetting(
 		settings[ATTEMPT_LOG_ENABLED_KEY] ?? null,
 		DEFAULT_ATTEMPT_LOG_ENABLED,
@@ -461,6 +479,8 @@ export async function getProxyRuntimeSettings(
 		usage_queue_enabled: usageQueueEnabled,
 		usage_queue_daily_limit: usageQueueDailyLimit,
 		usage_queue_direct_write_ratio: usageQueueDirectWriteRatio,
+		attempt_worker_fallback_enabled: attemptWorkerFallbackEnabled,
+		attempt_worker_fallback_threshold: attemptWorkerFallbackThreshold,
 		attempt_log_enabled: attemptLogEnabled,
 		attempt_log_retention_days: attemptLogRetentionDays,
 	};
@@ -605,6 +625,24 @@ export async function setProxyRuntimeSettings(
 				db,
 				USAGE_QUEUE_DIRECT_WRITE_RATIO_KEY,
 				String(update.usage_queue_direct_write_ratio),
+			),
+		);
+	}
+	if (update.attempt_worker_fallback_enabled !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED_KEY,
+				update.attempt_worker_fallback_enabled ? "1" : "0",
+			),
+		);
+	}
+	if (update.attempt_worker_fallback_threshold !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY,
+				String(Math.max(1, Math.floor(update.attempt_worker_fallback_threshold))),
 			),
 		);
 	}

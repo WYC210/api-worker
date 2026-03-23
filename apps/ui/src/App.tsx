@@ -693,6 +693,11 @@ const App = () => {
 			usage_queue_direct_write_ratio: String(
 				runtimeSettings?.usage_queue_direct_write_ratio ?? 0.5,
 			),
+			proxy_attempt_worker_fallback_enabled:
+				runtimeSettings?.attempt_worker_fallback_enabled ?? false,
+			proxy_attempt_worker_fallback_threshold: String(
+				runtimeSettings?.attempt_worker_fallback_threshold ?? 2,
+			),
 		});
 	}, [data.settings]);
 
@@ -1323,6 +1328,9 @@ const App = () => {
 			const usageQueueDirectRatio = Number(
 				settingsForm.usage_queue_direct_write_ratio,
 			);
+			const attemptWorkerFallbackThreshold = Number(
+				settingsForm.proxy_attempt_worker_fallback_threshold,
+			);
 			if (
 				Number.isNaN(retention) ||
 				retention < 1 ||
@@ -1405,6 +1413,14 @@ const App = () => {
 				pushNotice("warning", "直写比例需在 0-1 之间");
 				return;
 			}
+			if (
+				Number.isNaN(attemptWorkerFallbackThreshold) ||
+				attemptWorkerFallbackThreshold < 1 ||
+				!Number.isInteger(attemptWorkerFallbackThreshold)
+			) {
+				pushNotice("warning", "Attempt 回退阈值需为正整数");
+				return;
+			}
 			startAction(actionKey);
 			const payload: Record<
 				string,
@@ -1428,6 +1444,9 @@ const App = () => {
 				proxy_usage_queue_enabled: settingsForm.proxy_usage_queue_enabled,
 				usage_queue_daily_limit: usageQueueDailyLimit,
 				usage_queue_direct_write_ratio: usageQueueDirectRatio,
+				proxy_attempt_worker_fallback_enabled:
+					settingsForm.proxy_attempt_worker_fallback_enabled,
+				proxy_attempt_worker_fallback_threshold: attemptWorkerFallbackThreshold,
 			};
 			const password = settingsForm.admin_password.trim();
 			if (password) {

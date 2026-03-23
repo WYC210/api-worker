@@ -63,6 +63,8 @@ export const initialSettingsForm: SettingsForm = {
 	proxy_usage_queue_enabled: true,
 	usage_queue_daily_limit: "10000",
 	usage_queue_direct_write_ratio: "0.5",
+	proxy_attempt_worker_fallback_enabled: false,
+	proxy_attempt_worker_fallback_threshold: "2",
 };
 
 export const initialDashboardQuery: DashboardQuery = {

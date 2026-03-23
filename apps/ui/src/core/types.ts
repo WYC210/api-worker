@@ -146,6 +146,8 @@ export type RuntimeProxySettings = {
 	usage_queue_enabled: boolean;
 	usage_queue_daily_limit: number;
 	usage_queue_direct_write_ratio: number;
+	attempt_worker_fallback_enabled: boolean;
+	attempt_worker_fallback_threshold: number;
 };
 
 export type RuntimeProxyConfig = RuntimeProxySettings & {
@@ -243,6 +245,8 @@ export type SettingsForm = {
 	proxy_usage_queue_enabled: boolean;
 	usage_queue_daily_limit: string;
 	usage_queue_direct_write_ratio: string;
+	proxy_attempt_worker_fallback_enabled: boolean;
+	proxy_attempt_worker_fallback_threshold: string;
 };
 
 export type TokenForm = {

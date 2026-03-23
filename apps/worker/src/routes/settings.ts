@@ -154,6 +154,8 @@ settings.put("/", async (c) => {
 		usage_queue_enabled?: boolean;
 		usage_queue_daily_limit?: number;
 		usage_queue_direct_write_ratio?: number;
+		attempt_worker_fallback_enabled?: boolean;
+		attempt_worker_fallback_threshold?: number;
 		attempt_log_enabled?: boolean;
 		attempt_log_retention_days?: number;
 	} = {};
@@ -390,6 +392,47 @@ settings.put("/", async (c) => {
 			);
 		}
 		runtimePatch.usage_queue_direct_write_ratio = ratio;
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_attempt_worker_fallback_enabled !== undefined) {
+		const raw = body.proxy_attempt_worker_fallback_enabled;
+		let enabled: boolean | null = null;
+		if (typeof raw === "boolean") {
+			enabled = raw;
+		} else if (typeof raw === "number") {
+			enabled = raw !== 0;
+		} else if (typeof raw === "string") {
+			const normalized = raw.trim().toLowerCase();
+			if (["1", "true", "yes", "on"].includes(normalized)) {
+				enabled = true;
+			} else if (["0", "false", "no", "off"].includes(normalized)) {
+				enabled = false;
+			}
+		}
+		if (enabled === null) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_attempt_worker_fallback_enabled",
+				"invalid_proxy_attempt_worker_fallback_enabled",
+			);
+		}
+		runtimePatch.attempt_worker_fallback_enabled = enabled;
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_attempt_worker_fallback_threshold !== undefined) {
+		const threshold = Number(body.proxy_attempt_worker_fallback_threshold);
+		if (Number.isNaN(threshold) || threshold < 1 || !Number.isInteger(threshold)) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_attempt_worker_fallback_threshold",
+				"invalid_proxy_attempt_worker_fallback_threshold",
+			);
+		}
+		runtimePatch.attempt_worker_fallback_threshold = threshold;
 		runtimeTouched = true;
 	}
 
