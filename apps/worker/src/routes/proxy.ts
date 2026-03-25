@@ -1448,7 +1448,7 @@ function channelSupportsModel(
 			: null;
 	if (hasExplicitMapping) {
 		if (verified && verified.size > 0) {
-			return Boolean(verifiedAllows);
+			return Boolean(verifiedAllows || declaredAllows);
 		}
 		if (declaredModels.length > 0) {
 			return Boolean(declaredAllows);
@@ -1459,7 +1459,7 @@ function channelSupportsModel(
 		return false;
 	}
 	if (verified && verified.size > 0) {
-		return Boolean(verifiedAllows);
+		return Boolean(verifiedAllows || declaredAllows);
 	}
 	if (declaredModels.length > 0) {
 		return true;
@@ -1571,7 +1571,11 @@ function normalizeIncomingRequestPath(path: string): {
 	if (!path) {
 		return { path, rewritten: false };
 	}
-	const normalized = path.replace(/^\/v1(?:\/v1)+(\/|$)/i, "/v1$1");
+	const normalizedV1Beta = path.replace(/^\/v1beta(\/|$)/i, "/v1$1");
+	const normalized = normalizedV1Beta.replace(
+		/^\/v1(?:\/v1)+(\/|$)/i,
+		"/v1$1",
+	);
 	return {
 		path: normalized,
 		rewritten: normalized !== path,
