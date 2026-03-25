@@ -601,7 +601,7 @@ export const SettingsView = ({
                   流式解析超时（毫秒）
                 </label>
                 <p class="app-settings-row__hint">
-                  SSE usage 解析任务的超时时间。
+                  SSE usage 解析任务的超时时间，0 表示不限制。
                 </p>
               </div>
               <Input
