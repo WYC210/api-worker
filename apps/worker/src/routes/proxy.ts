@@ -205,6 +205,22 @@ function normalizeStringField(value: unknown): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
+function extractModelFromRawJsonRequest(rawText: string): string | null {
+	if (!rawText) {
+		return null;
+	}
+	const match = rawText.match(/"model"\s*:\s*"((?:\\.|[^"\\])*)"/);
+	if (!match || !match[1]) {
+		return null;
+	}
+	try {
+		const decoded = JSON.parse(`"${match[1]}"`);
+		return normalizeStringField(decoded);
+	} catch {
+		return normalizeStringField(match[1]);
+	}
+}
+
 function extractResponsesRequestHints(
 	body: Record<string, unknown> | null,
 ): ResponsesRequestHints | null {
@@ -2080,7 +2096,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 		thresholdBytes: offloadThresholdBytes,
 		contentLengthHeader: c.req.header("content-length") ?? null,
 	});
-	const shouldTryLargeRequestDispatch = offloadDecision.shouldOffload;
+	const requestSizeBytes = offloadDecision.requestSizeKnown
+		? (offloadDecision.requestSizeBytes ?? 0)
+		: requestText.length;
+	const shouldTryLargeRequestDispatch = offloadDecision.requestSizeKnown
+		? offloadDecision.shouldOffload
+		: Boolean(c.env.ATTEMPT_WORKER) &&
+			requestSizeBytes >= offloadThresholdBytes;
 	const shouldSkipHeavyBodyParsing = shouldTryLargeRequestDispatch;
 	let parsedBody =
 		!shouldSkipHeavyBodyParsing && requestText
@@ -2092,10 +2114,18 @@ proxy.all("/*", tokenAuth, async (c) => {
 	const effectiveRequestText = parsedBody
 		? JSON.stringify(parsedBody)
 		: requestText;
+	const modelProbeBody =
+		parsedBody ??
+		(shouldSkipHeavyBodyParsing
+			? (() => {
+					const model = extractModelFromRawJsonRequest(requestText);
+					return model ? ({ model } as Record<string, unknown>) : null;
+				})()
+			: null);
 	const downstreamModel = parseDownstreamModel(
 		downstreamProvider,
 		requestPath,
-		parsedBody,
+		modelProbeBody,
 	);
 	const inferredStream =
 		shouldSkipHeavyBodyParsing && requestText
