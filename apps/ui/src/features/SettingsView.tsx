@@ -13,9 +13,39 @@ type SettingsViewProps = {
 };
 
 const streamUsageModes = [
-	{ value: "full", label: "完整", hint: "全量解析" },
-	{ value: "lite", label: "轻量", hint: "降低开销" },
-	{ value: "off", label: "关闭", hint: "仅记录基础" },
+	{
+		value: "full",
+		label: "FULL",
+		hint: "全部都解析（流式与非流式、成功与失败都尽量解析）",
+		cpu: "高开销",
+		rules: [
+			"成功响应会尽量提取 usage。",
+			"失败响应也会尽量提取 usage。",
+			"解析失败不会改主响应状态，只记录诊断信息。",
+		],
+	},
+	{
+		value: "lite",
+		label: "LITE",
+		hint: "仅成功流式解析（稳态策略）",
+		cpu: "中开销",
+		rules: [
+			"仅在成功且流式响应时启用 SSE 解析。",
+			"非流式优先使用 header/json 即时字段。",
+			"失败响应不做深度解析。",
+		],
+	},
+	{
+		value: "off",
+		label: "OFF",
+		hint: "仅头信息/JSON（不跑 SSE 解析）",
+		cpu: "低开销",
+		rules: [
+			"不启动 SSE usage 解析任务。",
+			"仅使用 header/json 即时字段。",
+			"适合优先控制 CPU 峰值。",
+		],
+	},
 ] as const;
 
 /**
@@ -36,6 +66,11 @@ export const SettingsView = ({
 	onSubmit,
 	onFormChange,
 }: SettingsViewProps) => {
+	const selectedStreamUsageMode =
+		streamUsageModes.find(
+			(mode) => mode.value === settingsForm.proxy_stream_usage_mode,
+		) ?? streamUsageModes[1];
+	const shouldShowDeepParseSettings = selectedStreamUsageMode.value !== "off";
 	const attemptWorkerBoundValue =
 		runtimeConfig === null || runtimeConfig === undefined
 			? "-"
@@ -650,21 +685,23 @@ export const SettingsView = ({
 
 				<Card class="app-settings-group">
 					<div class="app-settings-group__header">
-						<h4 class="app-settings-group__title">解析</h4>
-						<p class="app-settings-group__caption">流式解析参数</p>
+						<h4 class="app-settings-group__title">流式 usage 解析策略</h4>
+						<p class="app-settings-group__caption">
+							先选策略，再配置该策略相关参数
+						</p>
 					</div>
 					<div class="app-settings-list">
 						<div class="app-settings-row app-settings-row--stack">
 							<div class="app-settings-row__main">
-								<span class="app-settings-row__label">流式 usage 解析模式</span>
+								<span class="app-settings-row__label">解析策略</span>
 								<p class="app-settings-row__hint">
-									选择完整解析、轻量解析或关闭解析
+									FULL 风险最高但信息最全，OFF 开销最低
 								</p>
 							</div>
 							<div
 								class="app-segment app-settings-row__control app-settings-row__control--full"
 								role="radiogroup"
-								aria-label="流式 usage 解析模式"
+								aria-label="流式 usage 解析策略"
 							>
 								{streamUsageModes.map((mode) => {
 									const active =
@@ -685,63 +722,94 @@ export const SettingsView = ({
 										>
 											<span>{mode.label}</span>
 											<small>{mode.hint}</small>
+											<small>CPU：{mode.cpu}</small>
 										</button>
 									);
 								})}
 							</div>
 						</div>
-						<div class="app-settings-row">
+						<div class="app-settings-row app-settings-row--stack">
 							<div class="app-settings-row__main">
-								<label
-									class="app-settings-row__label"
-									for="proxy-stream-usage-max-parsers"
-								>
-									流式解析并发上限
-								</label>
-								<p class="app-settings-row__hint">0 表示不限制</p>
-							</div>
-							<Input
-								class="app-settings-row__control app-settings-row__control--compact"
-								id="proxy-stream-usage-max-parsers"
-								name="proxy_stream_usage_max_parsers"
-								type="number"
-								min="0"
-								value={settingsForm.proxy_stream_usage_max_parsers}
-								onInput={(event) => {
-									const target = event.currentTarget as HTMLInputElement | null;
-									onFormChange({
-										proxy_stream_usage_max_parsers: target?.value ?? "",
-									});
-								}}
-							/>
-						</div>
-						<div class="app-settings-row">
-							<div class="app-settings-row__main">
-								<label
-									class="app-settings-row__label"
-									for="proxy-stream-usage-parse-timeout"
-								>
-									流式解析超时（毫秒）
-								</label>
+								<span class="app-settings-row__label">当前策略生效规则</span>
 								<p class="app-settings-row__hint">
-									SSE usage 解析任务的超时时间，0 表示不限制
+									{selectedStreamUsageMode.label}：
+									{selectedStreamUsageMode.hint}
 								</p>
 							</div>
-							<Input
-								class="app-settings-row__control app-settings-row__control--compact"
-								id="proxy-stream-usage-parse-timeout"
-								name="proxy_stream_usage_parse_timeout_ms"
-								type="number"
-								min="0"
-								value={settingsForm.proxy_stream_usage_parse_timeout_ms}
-								onInput={(event) => {
-									const target = event.currentTarget as HTMLInputElement | null;
-									onFormChange({
-										proxy_stream_usage_parse_timeout_ms: target?.value ?? "",
-									});
-								}}
-							/>
+							<div class="app-settings-row__control app-settings-row__control--full rounded-xl border border-[color:var(--app-border)]/70 bg-white/70 px-4 py-3 text-xs text-[color:var(--app-ink-muted)]">
+								{selectedStreamUsageMode.rules.map((rule) => (
+									<p key={rule}>{rule}</p>
+								))}
+							</div>
 						</div>
+						{shouldShowDeepParseSettings ? (
+							<>
+								<div class="app-settings-row">
+									<div class="app-settings-row__main">
+										<label
+											class="app-settings-row__label"
+											for="proxy-stream-usage-max-parsers"
+										>
+											流式解析并发上限
+										</label>
+										<p class="app-settings-row__hint">0 表示不限制</p>
+									</div>
+									<Input
+										class="app-settings-row__control app-settings-row__control--compact"
+										id="proxy-stream-usage-max-parsers"
+										name="proxy_stream_usage_max_parsers"
+										type="number"
+										min="0"
+										value={settingsForm.proxy_stream_usage_max_parsers}
+										onInput={(event) => {
+											const target =
+												event.currentTarget as HTMLInputElement | null;
+											onFormChange({
+												proxy_stream_usage_max_parsers: target?.value ?? "",
+											});
+										}}
+									/>
+								</div>
+								<div class="app-settings-row">
+									<div class="app-settings-row__main">
+										<label
+											class="app-settings-row__label"
+											for="proxy-stream-usage-parse-timeout"
+										>
+											流式解析超时（毫秒）
+										</label>
+										<p class="app-settings-row__hint">
+											SSE usage 解析任务的超时时间，0 表示不限制
+										</p>
+									</div>
+									<Input
+										class="app-settings-row__control app-settings-row__control--compact"
+										id="proxy-stream-usage-parse-timeout"
+										name="proxy_stream_usage_parse_timeout_ms"
+										type="number"
+										min="0"
+										value={settingsForm.proxy_stream_usage_parse_timeout_ms}
+										onInput={(event) => {
+											const target =
+												event.currentTarget as HTMLInputElement | null;
+											onFormChange({
+												proxy_stream_usage_parse_timeout_ms:
+													target?.value ?? "",
+											});
+										}}
+									/>
+								</div>
+							</>
+						) : (
+							<div class="app-settings-row app-settings-row--stack">
+								<div class="app-settings-row__main">
+									<span class="app-settings-row__label">当前策略参数</span>
+									<p class="app-settings-row__hint">
+										OFF 策略不使用流式深度解析参数，仅按头信息/JSON 获取 usage。
+									</p>
+								</div>
+							</div>
+						)}
 					</div>
 				</Card>
 

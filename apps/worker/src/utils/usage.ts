@@ -63,8 +63,6 @@ export class StreamUsageParseError extends Error {
 	}
 }
 
-const USAGE_HINTS = ['"usage"', '"usageMetadata"', '"usage_metadata"'];
-
 function normalizeErrorDetail(error: unknown): string | null {
 	if (error instanceof Error) {
 		const text = error.message.trim();
@@ -216,13 +214,6 @@ export async function parseUsageFromSse(
 		}
 	};
 
-	const payloadMayContainUsage = (payload: string): boolean => {
-		if (!payload) {
-			return false;
-		}
-		return USAGE_HINTS.some((hint) => payload.includes(hint));
-	};
-
 	while (true) {
 		let chunk: ReadableStreamReadResult<Uint8Array>;
 		try {
@@ -264,10 +255,6 @@ export async function parseUsageFromSse(
 					if (firstTokenLatencyMs === null) {
 						firstTokenLatencyMs = Date.now() - start;
 					}
-					if (mode === "lite" && !payloadMayContainUsage(payload)) {
-						newlineIndex = buffer.indexOf("\n");
-						continue;
-					}
 					let wasmCandidate: NormalizedUsage | null = null;
 					try {
 						wasmCandidate = parseUsageFromSseLineViaWasm(line);
@@ -285,21 +272,6 @@ export async function parseUsageFromSse(
 					}
 					if (wasmCandidate) {
 						usage = wasmCandidate;
-						if (mode === "lite") {
-							await reader.cancel();
-							if (timeoutId) {
-								clearTimeout(timeoutId);
-							}
-							return {
-								usage,
-								firstTokenLatencyMs,
-								timedOut,
-								bytesRead,
-								eventsSeen,
-								sampledPayload: sampledPayload || null,
-								sampleTruncated,
-							};
-						}
 						newlineIndex = buffer.indexOf("\n");
 						continue;
 					}
@@ -317,17 +289,6 @@ export async function parseUsageFromSse(
 			appendSample(payload);
 			if (firstTokenLatencyMs === null) {
 				firstTokenLatencyMs = Date.now() - start;
-			}
-			if (mode === "lite" && !payloadMayContainUsage(payload)) {
-				return {
-					usage,
-					firstTokenLatencyMs,
-					timedOut,
-					bytesRead,
-					eventsSeen,
-					sampledPayload: sampledPayload || null,
-					sampleTruncated,
-				};
 			}
 			let wasmCandidate: NormalizedUsage | null = null;
 			try {

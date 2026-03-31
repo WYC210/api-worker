@@ -2946,6 +2946,9 @@ proxy.all("/*", tokenAuth, async (c) => {
 		60,
 		Math.floor(runtimeSettings.stream_options_capability_ttl_seconds),
 	);
+	const streamUsageOptions = getStreamUsageOptions(runtimeSettings);
+	const streamUsageMode = streamUsageOptions.mode ?? "lite";
+	const streamUsageMaxParsers = getStreamUsageMaxParsers(runtimeSettings);
 	const usageErrorMessageMaxLength = INTERNAL_USAGE_ERROR_MESSAGE_MAX_LENGTH;
 	const streamUsageParseTimeoutMs =
 		getStreamUsageParseTimeoutMs(runtimeSettings);
@@ -3050,6 +3053,45 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let selectedAttemptUpstreamRequestId: string | null = null;
 	let lastErrorDetails: ErrorDetails | null = null;
 	let attemptsExecuted = 0;
+	const parseStreamUsageOnFailure = async (response: Response) => {
+		if (streamUsageMode !== "full" || !isStream) {
+			return {
+				usage: null as NormalizedUsage | null,
+				usageSource: "none" as const,
+			};
+		}
+		const contentType = response.headers.get("content-type") ?? "";
+		if (!contentType.includes("text/event-stream")) {
+			return {
+				usage: null as NormalizedUsage | null,
+				usageSource: "none" as const,
+			};
+		}
+		if (activeStreamUsageParsers >= streamUsageMaxParsers) {
+			return {
+				usage: null as NormalizedUsage | null,
+				usageSource: "none" as const,
+			};
+		}
+		activeStreamUsageParsers += 1;
+		try {
+			const streamUsage = await parseUsageFromSse(response.clone(), {
+				...streamUsageOptions,
+				timeoutMs: streamUsageParseTimeoutMs,
+			});
+			return {
+				usage: streamUsage.usage,
+				usageSource: streamUsage.usage ? ("sse" as const) : ("none" as const),
+			};
+		} catch {
+			return {
+				usage: null as NormalizedUsage | null,
+				usageSource: "none" as const,
+			};
+		} finally {
+			activeStreamUsageParsers = Math.max(0, activeStreamUsageParsers - 1);
+		}
+	};
 	const attemptFailures: AttemptFailureDetail[] = [];
 	const appendAttemptFailure = (options: {
 		attemptIndex: number;
@@ -3717,6 +3759,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 						}
 					} else {
 						const errorInfo = await extractErrorDetails(response);
+						const failureUsage = await parseStreamUsageOnFailure(response);
 						const normalizedErrorCode = normalizeUpstreamErrorCode(
 							errorInfo.errorCode,
 							response.status,
@@ -3750,14 +3793,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 							requestPath: responsePath,
 							latencyMs: attemptLatencyMs,
 							firstTokenLatencyMs: isStream ? null : attemptLatencyMs,
-							usage: null,
+							usage: failureUsage.usage,
 							status: "error",
 							upstreamStatus: response.status,
 							errorCode: finalErrorCode,
 							errorMessage: normalizedErrorMessage,
 							failureStage: "upstream_response",
 							failureReason: finalErrorCode,
-							usageSource: "none",
+							usageSource: failureUsage.usageSource,
 							errorMetaJson: errorInfo.errorMetaJson,
 						});
 						recordAttemptLog({
@@ -4455,6 +4498,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				}
 
 				const errorInfo = await extractErrorDetails(response);
+				const failureUsage = await parseStreamUsageOnFailure(response);
 				const normalizedErrorCode = normalizeUpstreamErrorCode(
 					errorInfo.errorCode,
 					response.status,
@@ -4488,14 +4532,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 					requestPath: responsePath,
 					latencyMs: attemptLatencyMs,
 					firstTokenLatencyMs: isStream ? null : attemptLatencyMs,
-					usage: null,
+					usage: failureUsage.usage,
 					status: "error",
 					upstreamStatus: response.status,
 					errorCode: finalErrorCode,
 					errorMessage: normalizedErrorMessage,
 					failureStage: "upstream_response",
 					failureReason: finalErrorCode,
-					usageSource: "none",
+					usageSource: failureUsage.usageSource,
 					errorMetaJson: errorInfo.errorMetaJson,
 				});
 				recordAttemptLog({
@@ -4687,9 +4731,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 		const selectedLatencyMs = Date.now() - requestStart;
 		const executionCtx = (c as { executionCtx?: ExecutionContextLike })
 			.executionCtx;
-		const streamUsageOptions = getStreamUsageOptions(runtimeSettings);
-		const streamUsageMaxParsers = getStreamUsageMaxParsers(runtimeSettings);
-		const streamUsageMode = streamUsageOptions.mode ?? "full";
 		let usageFinalized = false;
 		const finalizeUsage = (
 			options: Parameters<typeof recordAttemptUsage>[0],
@@ -4773,10 +4814,24 @@ proxy.all("/*", tokenAuth, async (c) => {
 				});
 			}
 		};
+		const shouldParseSelectedStream =
+			streamUsageMode === "full" || streamUsageMode === "lite";
 		const canParseStream =
-			streamUsageOptions.mode !== "off" &&
+			shouldParseSelectedStream &&
 			activeStreamUsageParsers < streamUsageMaxParsers;
-		if (!canParseStream) {
+		if (!shouldParseSelectedStream) {
+			finalizeUsage({
+				channelId: selectedChannel.id,
+				requestPath: selectedRequestPath,
+				latencyMs: selectedLatencyMs,
+				firstTokenLatencyMs: null,
+				usage: selectedImmediateUsage,
+				status: "ok",
+				upstreamStatus: selectedResponse.status,
+				failureStage: "usage_finalize",
+				usageSource: selectedImmediateUsage ? "header" : "none",
+			});
+		} else if (!canParseStream) {
 			const fallbackUsageSource = selectedImmediateUsage ? "header" : "none";
 			const fallbackMissingCode = "usage_missing.stream.parser_disabled";
 			finalizeUsage({
