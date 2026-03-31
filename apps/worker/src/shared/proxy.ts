@@ -328,6 +328,69 @@ function extractModelFromRawJsonRequest(rawText: string): string | null {
 	}
 }
 
+function decodeRawJsonStringLiteral(value: string): string | null {
+	try {
+		const decoded = JSON.parse(`"${value}"`);
+		return normalizeStringField(decoded);
+	} catch {
+		return normalizeStringField(value);
+	}
+}
+
+function extractStringFieldFromRawJsonRequest(
+	rawText: string,
+	fieldName: string,
+): string | null {
+	if (!rawText) {
+		return null;
+	}
+	const escapedName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const matcher = new RegExp(
+		`"${escapedName}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
+	);
+	const match = rawText.match(matcher);
+	if (!match || !match[1]) {
+		return null;
+	}
+	return decodeRawJsonStringLiteral(match[1]);
+}
+
+function extractResponsesRequestHintsFromRawJsonRequest(
+	rawText: string,
+): ResponsesRequestHints | null {
+	if (!rawText) {
+		return null;
+	}
+	const previousResponseId =
+		extractStringFieldFromRawJsonRequest(rawText, "previous_response_id") ??
+		extractStringFieldFromRawJsonRequest(rawText, "previousResponseId");
+	const hasFunctionCallOutput = /"type"\s*:\s*"function_call_output"/.test(
+		rawText,
+	);
+	if (!previousResponseId && !hasFunctionCallOutput) {
+		return null;
+	}
+	return {
+		previousResponseId,
+		functionCallOutputIds: [],
+		hasFunctionCallOutput,
+	};
+}
+
+function rewriteModelInRawJsonRequest(
+	rawText: string | undefined,
+	model: string,
+): string | undefined {
+	if (!rawText) {
+		return rawText;
+	}
+	const matcher = /"model"\s*:\s*"(?:\\.|[^"\\])*"/;
+	if (!matcher.test(rawText)) {
+		return rawText;
+	}
+	return rawText.replace(matcher, `"model":${JSON.stringify(model)}`);
+}
+
 function extractResponsesRequestHints(
 	body: Record<string, unknown> | null,
 ): ResponsesRequestHints | null {
@@ -2438,6 +2501,15 @@ proxy.all("/*", tokenAuth, async (c) => {
 		parsedBodyInitialized && downstreamProvider === "openai"
 			? extractResponsesRequestHintsShared(parsedBody)
 			: null;
+	if (
+		!responsesRequestHints &&
+		shouldSkipHeavyBodyParsing &&
+		downstreamProvider === "openai" &&
+		endpointType === "responses"
+	) {
+		responsesRequestHints =
+			extractResponsesRequestHintsFromRawJsonRequest(requestText);
+	}
 	let hasChatToolOutput =
 		parsedBodyInitialized && downstreamProvider === "openai"
 			? hasChatToolOutputHintShared(parsedBody)
@@ -2478,9 +2550,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 		requestPath,
 		modelProbeBody,
 	);
-	if (shouldSkipHeavyBodyParsing && endpointType === "responses") {
-		ensureParsedBody();
-	}
 	const inferredStream =
 		shouldSkipHeavyBodyParsing && requestText
 			? detectStreamFlagFromRawJsonRequest(requestText)
@@ -3269,11 +3338,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else if (sameProvider) {
 				if (upstreamProvider === "gemini") {
@@ -3281,11 +3352,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else {
 				let built: {
@@ -3362,7 +3435,8 @@ proxy.all("/*", tokenAuth, async (c) => {
 			const shouldHandleStreamOptions =
 				upstreamProvider === "openai" &&
 				isStream &&
-				(endpointType === "chat" || endpointType === "responses");
+				(endpointType === "chat" || endpointType === "responses") &&
+				!shouldSkipHeavyBodyParsing;
 			let streamOptionsInjected = false;
 			let strippedStreamOptionsBodyText: string | undefined = upstreamBodyText;
 			if (shouldHandleStreamOptions) {
@@ -3894,11 +3968,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else if (sameProvider) {
 				if (upstreamProvider === "gemini") {
@@ -3906,11 +3982,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else {
 				let built: {
@@ -3990,7 +4068,8 @@ proxy.all("/*", tokenAuth, async (c) => {
 			const shouldHandleStreamOptions =
 				upstreamProvider === "openai" &&
 				isStream &&
-				(endpointType === "chat" || endpointType === "responses");
+				(endpointType === "chat" || endpointType === "responses") &&
+				!shouldSkipHeavyBodyParsing;
 			let streamOptionsInjected = false;
 			let strippedStreamOptionsBodyText: string | undefined = upstreamBodyText;
 			if (shouldHandleStreamOptions) {
