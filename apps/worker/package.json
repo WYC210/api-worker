@@ -4,7 +4,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "wrangler dev --port 8787 --inspector-port 9229",
+		"dev:no-hot-cache": "wrangler dev --port 8787 --inspector-port 9229 --config .wrangler.local.no-hot-cache.toml",
 		"dev:remote": "wrangler dev --remote --port 8787 --inspector-port 9229 --config .wrangler.remote.toml",
+		"dev:remote:no-hot-cache": "wrangler dev --remote --port 8787 --inspector-port 9229 --config .wrangler.remote.no-hot-cache.toml",
 		"deploy": "wrangler deploy",
 		"db:migrate": "wrangler d1 migrations apply DB --local",
 		"db:migrate:remote": "wrangler d1 migrations apply DB --remote --config .wrangler.remote.toml",

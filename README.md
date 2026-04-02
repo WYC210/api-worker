@@ -112,36 +112,53 @@ bun install
 
 ### 3) 启动本地开发
 
-同时启动 Worker 和 UI：
+统一启动命令：
 
 ```bash
-bun run dev
+bun run dev -- [可选参数]
 ```
 
-三种本地启动模式：
+可选参数：
 
-- 模式1（正常）：`bun run dev`（主 Worker + 调用执行器 + UI）
-- 模式2（不启辅助 Worker）：`bun run dev:no-attempt-worker`（主 Worker + UI）
-- 模式3（只启主 Worker）：`bun run dev:worker-only`（仅主 Worker）
+- `--no-attempt-worker`：不启动调用执行器（attempt-worker）
+- `--no-ui`：不启动 UI dev server
+- `--cloud-db`：连接云端 D1/KV（会自动准备 remote 配置）
+- `--no-hot-cache`：仅禁用 `KV_HOT` 热缓存（不影响其他内存级缓存）
+- `--build-ui`：启动前先构建 UI（`bun run build:ui`）
+- `--skip-ui-build`：跳过 UI 预构建（用于覆盖 `--build-ui` 默认行为）
+- `--bg`：后台启动（日志写入 `.dev/dev-runner.log`）
+- `--status`：查看后台运行状态
+- `--stop`：停止后台运行实例
 
-三种模式均支持可选参数 `--cloud-db` 切到云端数据库：
+常用示例：
 
-- 模式1 + 云端数据库：`bun run dev -- --cloud-db`
-- 模式2 + 云端数据库：`bun run dev:no-attempt-worker -- --cloud-db`
-- 模式3 + 云端数据库：`bun run dev:worker-only -- --cloud-db`
+- 默认启动（主 Worker + 调用执行器 + UI）：`bun run dev`
+- 主 Worker + UI（不启调用执行器）：`bun run dev -- --no-attempt-worker`
+- 仅主 Worker：`bun run dev -- --no-attempt-worker --no-ui`
+- 默认启动 + 云端数据库：`bun run dev -- --cloud-db`
+- 仅主 Worker + 云端数据库 + 禁用热缓存：`bun run dev -- --no-attempt-worker --no-ui --cloud-db --no-hot-cache`
+- 后台启动（仅主 Worker + 云端数据库 + 禁用热缓存）：`bun run dev -- --no-attempt-worker --no-ui --cloud-db --no-hot-cache --bg`
+- 查看后台状态：`bun run dev -- --status`
+- 停止后台实例：`bun run dev -- --stop`
 
-模式3 是否受 UI 影响：
+快捷命令（仅主 Worker + 禁用热缓存）：
+
+- 默认先构建 UI 后启动：`bun run dev:worker`
+- 可选跳过 UI 构建：`bun run dev:worker -- --skip-ui-build`
+- 同样支持叠加参数（例如云端库 + 后台）：`bun run dev:worker -- --cloud-db --bg`
+
+仅主 Worker时是否受 UI 影响：
 
 - 如果 `apps/ui/dist` 已存在（或之前构建过），Worker 的静态资源绑定可继续使用该构建产物
 - 即使不启动 UI dev server，后端 API `/api/*`、`/v1*` 不受影响
-- 若你需要实时改前端，仍建议启动 `bun run dev:ui`
+- 若你需要实时改前端，仍建议单独启动 UI：`bun --filter api-worker-ui dev -- --port 4173`
 
 或分别启动：
 
 ```bash
-bun run dev:attempt-worker
-bun run dev:worker
-bun run dev:ui
+bun --cwd apps/attempt-worker run dev
+bun --cwd apps/worker run dev
+bun --filter api-worker-ui dev -- --port 4173
 ```
 
 默认端口：
@@ -174,14 +191,15 @@ cp .env.example .env
 ```bash
 bun run prepare:remote-config
 bun run db:migrate:remote
-bun run dev:remote-db
+bun run dev -- --cloud-db
 ```
 
 说明：
 
 - `prepare:remote-config` 会在本地生成 `apps/worker/.wrangler.remote.toml` 与 `apps/attempt-worker/.wrangler.remote.toml`
+- `--no-hot-cache` 会额外生成 no-hot 配置并移除 `KV_HOT` 绑定，仅影响热缓存路径
 - 这两个文件已加入 `.gitignore`，不会入库
-- 如需单独启动服务，可用 `bun run dev:worker:remote` 与 `bun run dev:attempt-worker:remote`
+- 如需单独启动服务，可用 `bun --cwd apps/worker run dev:remote` 与 `bun --cwd apps/attempt-worker run dev:remote`
 - 想切回本地数据库时，继续使用 `bun run dev` + `bun run --filter api-worker db:migrate`
 
 ## 常用命令
@@ -194,7 +212,7 @@ bun run format
 bun run check
 bun run prepare:remote-config
 bun run db:migrate:remote
-bun run dev:remote-db
+bun run dev -- --cloud-db
 ```
 
 ## Agent 协作规范
@@ -322,7 +340,7 @@ bun run test
 
 若本地接口异常，优先检查：
 
-- Worker 是否运行（`bun run dev:worker`）
+- Worker 是否运行（`bun run dev` 或 `bun --cwd apps/worker run dev`）
 - UI 代理目标是否正确（`VITE_API_TARGET`）
 - D1 本地迁移是否完成（`db:migrate`）
 
