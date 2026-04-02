@@ -805,7 +805,7 @@ const App = () => {
 				],
 			proxy_zero_completion_as_error_enabled:
 				runtimeSettings?.zero_completion_as_error_enabled ?? true,
-			proxy_stream_usage_mode: runtimeSettings?.stream_usage_mode ?? "full",
+			proxy_stream_usage_mode: runtimeSettings?.stream_usage_mode ?? "lite",
 			proxy_stream_usage_max_parsers: String(
 				runtimeSettings?.stream_usage_max_parsers ?? 0,
 			),
@@ -1551,6 +1551,7 @@ const App = () => {
 			const streamUsageMode = settingsForm.proxy_stream_usage_mode
 				.trim()
 				.toLowerCase();
+			const shouldValidateDeepStreamParse = streamUsageMode !== "off";
 			const streamUsageMaxParsers = Number(
 				settingsForm.proxy_stream_usage_max_parsers,
 			);
@@ -1627,19 +1628,21 @@ const App = () => {
 				return;
 			}
 			if (!["full", "lite", "off"].includes(streamUsageMode)) {
-				pushNotice("warning", "流式解析模式需为 full/lite/off");
+				pushNotice("warning", "解析策略需为 FULL / LITE / OFF");
 				return;
 			}
-			if (Number.isNaN(streamUsageMaxParsers) || streamUsageMaxParsers < 0) {
-				pushNotice("warning", "并发上限需为非负整数");
-				return;
-			}
-			if (
-				Number.isNaN(streamUsageParseTimeoutMs) ||
-				streamUsageParseTimeoutMs < 0
-			) {
-				pushNotice("warning", "解析参数需为非负整数");
-				return;
+			if (shouldValidateDeepStreamParse) {
+				if (Number.isNaN(streamUsageMaxParsers) || streamUsageMaxParsers < 0) {
+					pushNotice("warning", "并发上限需为非负整数");
+					return;
+				}
+				if (
+					Number.isNaN(streamUsageParseTimeoutMs) ||
+					streamUsageParseTimeoutMs < 0
+				) {
+					pushNotice("warning", "解析参数需为非负整数");
+					return;
+				}
 			}
 			if (
 				Number.isNaN(responsesAffinityTtlSeconds) ||

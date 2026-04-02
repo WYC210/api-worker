@@ -16,7 +16,7 @@
 		"deploy:init": "node scripts/deploy.mjs init",
 		"deploy:update": "node scripts/deploy.mjs update",
 		"db:migrate:remote": "bun run prepare:remote-config -- --only worker && bun run --filter api-worker db:migrate:remote",
-		"test": "vitest --passWithNoTests",
+		"test": "vitest run --passWithNoTests",
 		"test:e2e": "playwright test",
 		"test:e2e:headed": "playwright test --headed",
 		"format": "bunx --bun biome format --write .",

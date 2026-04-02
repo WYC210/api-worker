@@ -160,6 +160,13 @@ const ATTEMPT_BINDING_RESPONSE_PATH_HEADER = "x-ha-attempt-response-path";
 const ATTEMPT_BINDING_LATENCY_HEADER = "x-ha-attempt-latency-ms";
 const ATTEMPT_BINDING_UPSTREAM_REQUEST_ID_HEADER =
 	"x-ha-attempt-upstream-request-id";
+const ATTEMPT_STREAM_USAGE_PROCESSED_HEADER =
+	"x-ha-attempt-stream-usage-processed";
+const ATTEMPT_STREAM_FIRST_TOKEN_LATENCY_HEADER =
+	"x-ha-attempt-stream-first-token-latency-ms";
+const ATTEMPT_STREAM_META_PARTIAL_HEADER = "x-ha-attempt-stream-meta-partial";
+const ATTEMPT_STREAM_META_REASON_HEADER = "x-ha-attempt-stream-meta-reason";
+const ATTEMPT_RESPONSE_ID_HEADER = "x-ha-attempt-response-id";
 const ATTEMPT_DISPATCH_INDEX_HEADER = "x-ha-dispatch-attempt-index";
 const ATTEMPT_DISPATCH_CHANNEL_ID_HEADER = "x-ha-dispatch-channel-id";
 const ATTEMPT_DISPATCH_STOP_RETRY_HEADER = "x-ha-dispatch-stop-retry";
@@ -319,6 +326,69 @@ function extractModelFromRawJsonRequest(rawText: string): string | null {
 	} catch {
 		return normalizeStringField(match[1]);
 	}
+}
+
+function decodeRawJsonStringLiteral(value: string): string | null {
+	try {
+		const decoded = JSON.parse(`"${value}"`);
+		return normalizeStringField(decoded);
+	} catch {
+		return normalizeStringField(value);
+	}
+}
+
+function extractStringFieldFromRawJsonRequest(
+	rawText: string,
+	fieldName: string,
+): string | null {
+	if (!rawText) {
+		return null;
+	}
+	const escapedName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const matcher = new RegExp(
+		`"${escapedName}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
+	);
+	const match = rawText.match(matcher);
+	if (!match || !match[1]) {
+		return null;
+	}
+	return decodeRawJsonStringLiteral(match[1]);
+}
+
+function extractResponsesRequestHintsFromRawJsonRequest(
+	rawText: string,
+): ResponsesRequestHints | null {
+	if (!rawText) {
+		return null;
+	}
+	const previousResponseId =
+		extractStringFieldFromRawJsonRequest(rawText, "previous_response_id") ??
+		extractStringFieldFromRawJsonRequest(rawText, "previousResponseId");
+	const hasFunctionCallOutput = /"type"\s*:\s*"function_call_output"/.test(
+		rawText,
+	);
+	if (!previousResponseId && !hasFunctionCallOutput) {
+		return null;
+	}
+	return {
+		previousResponseId,
+		functionCallOutputIds: [],
+		hasFunctionCallOutput,
+	};
+}
+
+function rewriteModelInRawJsonRequest(
+	rawText: string | undefined,
+	model: string,
+): string | undefined {
+	if (!rawText) {
+		return rawText;
+	}
+	const matcher = /"model"\s*:\s*"(?:\\.|[^"\\])*"/;
+	if (!matcher.test(rawText)) {
+		return rawText;
+	}
+	return rawText.replace(matcher, `"model":${JSON.stringify(model)}`);
 }
 
 function extractResponsesRequestHints(
@@ -2069,6 +2139,17 @@ function parseLatencyHeader(value: string | null): number {
 	return Math.floor(parsed);
 }
 
+function parseOptionalLatencyHeader(value: string | null): number | null {
+	if (!value) {
+		return null;
+	}
+	const parsed = Number(value);
+	if (Number.isNaN(parsed) || parsed < 0) {
+		return null;
+	}
+	return Math.floor(parsed);
+}
+
 function parseAttemptIndexHeader(value: string | null): number | null {
 	if (!value) {
 		return null;
@@ -2420,6 +2501,15 @@ proxy.all("/*", tokenAuth, async (c) => {
 		parsedBodyInitialized && downstreamProvider === "openai"
 			? extractResponsesRequestHintsShared(parsedBody)
 			: null;
+	if (
+		!responsesRequestHints &&
+		shouldSkipHeavyBodyParsing &&
+		downstreamProvider === "openai" &&
+		endpointType === "responses"
+	) {
+		responsesRequestHints =
+			extractResponsesRequestHintsFromRawJsonRequest(requestText);
+	}
 	let hasChatToolOutput =
 		parsedBodyInitialized && downstreamProvider === "openai"
 			? hasChatToolOutputHintShared(parsedBody)
@@ -2460,9 +2550,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 		requestPath,
 		modelProbeBody,
 	);
-	if (shouldSkipHeavyBodyParsing && endpointType === "responses") {
-		ensureParsedBody();
-	}
 	const inferredStream =
 		shouldSkipHeavyBodyParsing && requestText
 			? detectStreamFlagFromRawJsonRequest(requestText)
@@ -2946,6 +3033,9 @@ proxy.all("/*", tokenAuth, async (c) => {
 		60,
 		Math.floor(runtimeSettings.stream_options_capability_ttl_seconds),
 	);
+	const streamUsageOptions = getStreamUsageOptions(runtimeSettings);
+	const streamUsageMode = streamUsageOptions.mode ?? "lite";
+	const streamUsageMaxParsers = getStreamUsageMaxParsers(runtimeSettings);
 	const usageErrorMessageMaxLength = INTERNAL_USAGE_ERROR_MESSAGE_MAX_LENGTH;
 	const streamUsageParseTimeoutMs =
 		getStreamUsageParseTimeoutMs(runtimeSettings);
@@ -3050,6 +3140,12 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let selectedAttemptUpstreamRequestId: string | null = null;
 	let lastErrorDetails: ErrorDetails | null = null;
 	let attemptsExecuted = 0;
+	const parseStreamUsageOnFailure = async (_response: Response) => {
+		return {
+			usage: null as NormalizedUsage | null,
+			usageSource: "none" as const,
+		};
+	};
 	const attemptFailures: AttemptFailureDetail[] = [];
 	const appendAttemptFailure = (options: {
 		attemptIndex: number;
@@ -3242,11 +3338,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else if (sameProvider) {
 				if (upstreamProvider === "gemini") {
@@ -3254,11 +3352,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else {
 				let built: {
@@ -3335,7 +3435,8 @@ proxy.all("/*", tokenAuth, async (c) => {
 			const shouldHandleStreamOptions =
 				upstreamProvider === "openai" &&
 				isStream &&
-				(endpointType === "chat" || endpointType === "responses");
+				(endpointType === "chat" || endpointType === "responses") &&
+				!shouldSkipHeavyBodyParsing;
 			let streamOptionsInjected = false;
 			let strippedStreamOptionsBodyText: string | undefined = upstreamBodyText;
 			if (shouldHandleStreamOptions) {
@@ -3717,6 +3818,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 						}
 					} else {
 						const errorInfo = await extractErrorDetails(response);
+						const failureUsage = await parseStreamUsageOnFailure(response);
 						const normalizedErrorCode = normalizeUpstreamErrorCode(
 							errorInfo.errorCode,
 							response.status,
@@ -3750,14 +3852,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 							requestPath: responsePath,
 							latencyMs: attemptLatencyMs,
 							firstTokenLatencyMs: isStream ? null : attemptLatencyMs,
-							usage: null,
+							usage: failureUsage.usage,
 							status: "error",
 							upstreamStatus: response.status,
 							errorCode: finalErrorCode,
 							errorMessage: normalizedErrorMessage,
 							failureStage: "upstream_response",
 							failureReason: finalErrorCode,
-							usageSource: "none",
+							usageSource: failureUsage.usageSource,
 							errorMetaJson: errorInfo.errorMetaJson,
 						});
 						recordAttemptLog({
@@ -3866,11 +3968,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else if (sameProvider) {
 				if (upstreamProvider === "gemini") {
@@ -3878,11 +3982,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						upstreamRequestPath,
 						upstreamModel,
 					);
-				} else if (upstreamModel && parsedBody) {
-					upstreamBodyText = JSON.stringify({
-						...parsedBody,
-						model: upstreamModel,
-					});
+				} else if (upstreamModel) {
+					upstreamBodyText = parsedBody
+						? JSON.stringify({
+								...parsedBody,
+								model: upstreamModel,
+							})
+						: rewriteModelInRawJsonRequest(upstreamBodyText, upstreamModel);
 				}
 			} else {
 				let built: {
@@ -3962,7 +4068,8 @@ proxy.all("/*", tokenAuth, async (c) => {
 			const shouldHandleStreamOptions =
 				upstreamProvider === "openai" &&
 				isStream &&
-				(endpointType === "chat" || endpointType === "responses");
+				(endpointType === "chat" || endpointType === "responses") &&
+				!shouldSkipHeavyBodyParsing;
 			let streamOptionsInjected = false;
 			let strippedStreamOptionsBodyText: string | undefined = upstreamBodyText;
 			if (shouldHandleStreamOptions) {
@@ -4455,6 +4562,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				}
 
 				const errorInfo = await extractErrorDetails(response);
+				const failureUsage = await parseStreamUsageOnFailure(response);
 				const normalizedErrorCode = normalizeUpstreamErrorCode(
 					errorInfo.errorCode,
 					response.status,
@@ -4488,14 +4596,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 					requestPath: responsePath,
 					latencyMs: attemptLatencyMs,
 					firstTokenLatencyMs: isStream ? null : attemptLatencyMs,
-					usage: null,
+					usage: failureUsage.usage,
 					status: "error",
 					upstreamStatus: response.status,
 					errorCode: finalErrorCode,
 					errorMessage: normalizedErrorMessage,
 					failureStage: "upstream_response",
 					failureReason: finalErrorCode,
-					usageSource: "none",
+					usageSource: failureUsage.usageSource,
 					errorMetaJson: errorInfo.errorMetaJson,
 				});
 				recordAttemptLog({
@@ -4685,70 +4793,31 @@ proxy.all("/*", tokenAuth, async (c) => {
 
 	if (selectedChannel && isStream) {
 		const selectedLatencyMs = Date.now() - requestStart;
-		const executionCtx = (c as { executionCtx?: ExecutionContextLike })
-			.executionCtx;
-		const streamUsageOptions = getStreamUsageOptions(runtimeSettings);
-		const streamUsageMaxParsers = getStreamUsageMaxParsers(runtimeSettings);
-		const streamUsageMode = streamUsageOptions.mode ?? "full";
-		let usageFinalized = false;
-		const finalizeUsage = (
-			options: Parameters<typeof recordAttemptUsage>[0],
-		) => {
-			if (usageFinalized) {
-				return;
-			}
-			usageFinalized = true;
-			recordAttemptUsage(options);
-		};
-		const buildStreamUsageObserveMeta = (options: {
-			reason: string;
-			firstTokenLatencyMs?: number | null;
-			bytesRead?: number;
-			eventsSeen?: number;
-			sampledPayload?: string | null;
-			sampleTruncated?: boolean;
-			parseErrorMetaJson?: string | null;
-		}): string | null => {
-			const parseErrorMeta =
-				typeof options.parseErrorMetaJson === "string"
-					? safeJsonParse<Record<string, unknown> | null>(
-							options.parseErrorMetaJson,
-							null,
-						)
-					: null;
-			return stringifyErrorMeta({
-				type: "stream_usage_observe",
-				trace_id: traceId,
-				reason: options.reason,
-				mode: streamUsageMode,
-				parse_timeout_ms: streamUsageParseTimeoutMs,
-				parser_limit: Number.isFinite(streamUsageMaxParsers)
-					? streamUsageMaxParsers
-					: null,
-				active_parsers: activeStreamUsageParsers,
-				has_header_usage: selectedHasUsageHeaders,
-				has_immediate_usage: Boolean(selectedImmediateUsage),
-				first_token_latency_ms: options.firstTokenLatencyMs ?? null,
-				bytes_read: options.bytesRead ?? null,
-				events_seen: options.eventsSeen ?? null,
-				sampled_payload: options.sampledPayload ?? null,
-				sample_truncated: options.sampleTruncated === true,
-				parse_error: parseErrorMeta,
-			});
-		};
-		let streamMetaPartialLogged = false;
-		const markStreamMetaPartialOutcome = (options: {
-			reason: string;
-			eventsSeen: number;
-		}) => {
-			if (streamMetaPartialLogged) {
-				return;
-			}
-			streamMetaPartialLogged = true;
+		const streamUsageProcessed = parseBooleanHeader(
+			selectedResponse.headers.get(ATTEMPT_STREAM_USAGE_PROCESSED_HEADER),
+		);
+		const usageSource = selectedImmediateUsage ? "header" : "none";
+		const streamMetaPartial = streamUsageProcessed
+			? parseBooleanHeader(
+					selectedResponse.headers.get(ATTEMPT_STREAM_META_PARTIAL_HEADER),
+				)
+			: false;
+		const firstTokenLatencyMs = streamUsageProcessed
+			? parseOptionalLatencyHeader(
+					selectedResponse.headers.get(
+						ATTEMPT_STREAM_FIRST_TOKEN_LATENCY_HEADER,
+					),
+				)
+			: null;
+		if (streamMetaPartial) {
+			const streamMetaReason =
+				normalizeMessage(
+					selectedResponse.headers.get(ATTEMPT_STREAM_META_REASON_HEADER),
+				) ?? STREAM_META_PARTIAL_CODE;
 			markStreamMetaPartial({
-				reason: options.reason,
+				reason: streamMetaReason,
 				path: selectedRequestPath,
-				eventsSeen: options.eventsSeen,
+				eventsSeen: 0,
 				hasImmediateUsage: Boolean(selectedImmediateUsage),
 				hasUsageHeaders: selectedHasUsageHeaders,
 			});
@@ -4772,163 +4841,23 @@ proxy.all("/*", tokenAuth, async (c) => {
 					endedAt: new Date().toISOString(),
 				});
 			}
-		};
-		const canParseStream =
-			streamUsageOptions.mode !== "off" &&
-			activeStreamUsageParsers < streamUsageMaxParsers;
-		if (!canParseStream) {
-			const fallbackUsageSource = selectedImmediateUsage ? "header" : "none";
-			const fallbackMissingCode = "usage_missing.stream.parser_disabled";
-			finalizeUsage({
-				channelId: selectedChannel.id,
-				requestPath: selectedRequestPath,
-				latencyMs: selectedLatencyMs,
-				firstTokenLatencyMs: null,
-				usage: selectedImmediateUsage,
-				status: "ok",
-				upstreamStatus: selectedResponse.status,
-				errorCode: fallbackMissingCode,
-				errorMessage: `usage_missing: ${fallbackMissingCode}`,
-				failureStage: USAGE_OBSERVE_FAILURE_STAGE,
-				failureReason: fallbackMissingCode,
-				usageSource: fallbackUsageSource,
-				errorMetaJson: buildStreamUsageObserveMeta({
-					reason: fallbackMissingCode,
-				}),
-			});
-		} else {
-			activeStreamUsageParsers += 1;
-			const task = parseUsageFromSse(selectedResponse.clone(), {
-				...streamUsageOptions,
-				timeoutMs: streamUsageParseTimeoutMs,
-			})
-				.then((streamUsage) => {
-					const usageValue = selectedImmediateUsage ?? streamUsage.usage;
-					if (streamUsage.timedOut) {
-						const timedOutWithContentNoMeta =
-							!usageValue && (streamUsage.eventsSeen ?? 0) > 0;
-						if (timedOutWithContentNoMeta) {
-							markStreamMetaPartialOutcome({
-								reason: "usage_parse_timeout",
-								eventsSeen: streamUsage.eventsSeen ?? 0,
-							});
-						}
-						const timeoutMessage = `usage_parse_timeout: stream usage parsing timed out after ${streamUsageParseTimeoutMs}ms`;
-						finalizeUsage({
-							channelId: selectedChannel.id,
-							requestPath: selectedRequestPath,
-							latencyMs: selectedLatencyMs,
-							firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
-							usage: usageValue,
-							status: timedOutWithContentNoMeta ? "warn" : "ok",
-							upstreamStatus: selectedResponse.status,
-							errorCode: timedOutWithContentNoMeta
-								? STREAM_META_PARTIAL_CODE
-								: "usage_parse_timeout",
-							errorMessage: timeoutMessage,
-							failureStage: USAGE_OBSERVE_FAILURE_STAGE,
-							failureReason: "usage_parse_timeout",
-							usageSource: usageValue
-								? selectedImmediateUsage
-									? "header"
-									: "sse"
-								: "none",
-							errorMetaJson: buildStreamUsageObserveMeta({
-								reason: "usage_parse_timeout",
-								firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
-								bytesRead: streamUsage.bytesRead,
-								eventsSeen: streamUsage.eventsSeen,
-								sampledPayload: streamUsage.sampledPayload,
-								sampleTruncated: streamUsage.sampleTruncated,
-							}),
-						});
-						return;
-					}
-					if (!usageValue) {
-						const streamUsageMissingCode = selectedHasUsageHeaders
-							? "usage_missing.stream.header_signal_unparseable"
-							: "usage_missing.stream.signal_absent";
-						const hasStreamContent = (streamUsage.eventsSeen ?? 0) > 0;
-						if (hasStreamContent) {
-							markStreamMetaPartialOutcome({
-								reason: streamUsageMissingCode,
-								eventsSeen: streamUsage.eventsSeen ?? 0,
-							});
-						}
-						const streamUsageMissingMessage = `usage_missing: ${streamUsageMissingCode}`;
-						finalizeUsage({
-							channelId: selectedChannel.id,
-							requestPath: selectedRequestPath,
-							latencyMs: selectedLatencyMs,
-							firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
-							usage: null,
-							status: hasStreamContent ? "warn" : "ok",
-							upstreamStatus: selectedResponse.status,
-							errorCode: hasStreamContent
-								? STREAM_META_PARTIAL_CODE
-								: streamUsageMissingCode,
-							errorMessage: hasStreamContent
-								? `${STREAM_META_PARTIAL_CODE}: ${streamUsageMissingCode}`
-								: streamUsageMissingMessage,
-							failureStage: USAGE_OBSERVE_FAILURE_STAGE,
-							failureReason: streamUsageMissingCode,
-							usageSource: "none",
-							errorMetaJson: buildStreamUsageObserveMeta({
-								reason: streamUsageMissingCode,
-								firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
-								bytesRead: streamUsage.bytesRead,
-								eventsSeen: streamUsage.eventsSeen,
-								sampledPayload: streamUsage.sampledPayload,
-								sampleTruncated: streamUsage.sampleTruncated,
-							}),
-						});
-						return;
-					}
-					finalizeUsage({
-						channelId: selectedChannel.id,
-						requestPath: selectedRequestPath,
-						latencyMs: selectedLatencyMs,
-						firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
-						usage: usageValue,
-						status: "ok",
-						upstreamStatus: selectedResponse.status,
-						failureStage: "usage_finalize",
-						usageSource: selectedImmediateUsage ? "header" : "sse",
-					});
-				})
-				.catch((error) => {
-					const parseFailure = classifyStreamUsageParseError(
-						error,
-						usageErrorMessageMaxLength,
-					);
-					finalizeUsage({
-						channelId: selectedChannel.id,
-						requestPath: selectedRequestPath,
-						latencyMs: selectedLatencyMs,
-						firstTokenLatencyMs: null,
-						usage: selectedImmediateUsage,
-						status: "ok",
-						upstreamStatus: selectedResponse.status,
-						errorCode: parseFailure.errorCode,
-						errorMessage: parseFailure.errorMessage,
-						failureStage: USAGE_OBSERVE_FAILURE_STAGE,
-						failureReason: parseFailure.errorCode,
-						usageSource: selectedImmediateUsage ? "header" : "none",
-						errorMetaJson: buildStreamUsageObserveMeta({
-							reason: parseFailure.errorCode,
-							parseErrorMetaJson: parseFailure.errorMetaJson,
-						}),
-					});
-				})
-				.finally(() => {
-					activeStreamUsageParsers = Math.max(0, activeStreamUsageParsers - 1);
-				});
-			if (executionCtx?.waitUntil) {
-				executionCtx.waitUntil(task);
-			} else {
-				task.catch(() => undefined);
-			}
 		}
+		recordAttemptUsage({
+			channelId: selectedChannel.id,
+			requestPath: selectedRequestPath,
+			latencyMs: selectedLatencyMs,
+			firstTokenLatencyMs,
+			usage: selectedImmediateUsage,
+			status: streamMetaPartial ? "warn" : "ok",
+			upstreamStatus: selectedResponse.status,
+			errorCode: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
+			errorMessage: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
+			failureStage: streamMetaPartial
+				? USAGE_OBSERVE_FAILURE_STAGE
+				: "usage_finalize",
+			failureReason: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
+			usageSource,
+		});
 	}
 
 	if (
@@ -4939,12 +4868,15 @@ proxy.all("/*", tokenAuth, async (c) => {
 	) {
 		const task = (async () => {
 			const contentType = selectedResponse.headers.get("content-type") ?? "";
-			let responseId: string | null = null;
-			if (isStream && contentType.includes("text/event-stream")) {
-				responseId = await extractOpenAiResponseIdFromSse(
-					selectedResponse.clone(),
-				);
-			} else if (contentType.includes("application/json")) {
+			let responseId =
+				normalizeMessage(
+					selectedResponse.headers.get(ATTEMPT_RESPONSE_ID_HEADER),
+				) ?? null;
+			if (
+				!responseId &&
+				!isStream &&
+				contentType.includes("application/json")
+			) {
 				const payload = await selectedResponse
 					.clone()
 					.json()
