@@ -19,6 +19,8 @@ import {
 } from "../services/site-metadata";
 import {
 	recoverDisabledChannelsViaWorker,
+	refreshActiveChannelsViaWorker,
+	refreshChannelById,
 	runCheckinAllViaWorker,
 	runCheckinSingleViaWorker,
 	verifyChannelById,
@@ -33,6 +35,10 @@ import {
 	buildVerificationBatchResult,
 	parseSiteVerificationSummary,
 } from "../services/site-verification";
+import {
+	listSiteTaskReports,
+	saveSiteTaskReport,
+} from "../services/site-task-report-store";
 
 const sites = new Hono<AppEnv>();
 
@@ -252,7 +258,8 @@ sites.get("/", async (c) => {
 					: [];
 		return buildSiteRecord(channel, callTokens);
 	});
-	return c.json({ sites: sitesList });
+	const taskReports = await listSiteTaskReports(c.env.DB);
+	return c.json({ sites: sitesList, task_reports: taskReports });
 });
 
 sites.post("/", async (c) => {
@@ -444,6 +451,12 @@ sites.delete("/:id", async (c) => {
 
 sites.post("/checkin-all", async (c) => {
 	const result = await runCheckinAllViaWorker(c.env.DB, c.env, new Date());
+	await saveSiteTaskReport(c.env.DB, {
+		kind: "checkin",
+		runs_at: result.runsAt,
+		summary: result.summary,
+		items: result.results,
+	});
 	return c.json({
 		results: result.results,
 		summary: result.summary,
@@ -469,6 +482,11 @@ sites.post("/verify-batch", async (c) => {
 				.filter((item: string) => item.length > 0)
 		: undefined;
 	const result = await verifySitesByIds(c.env.DB, ids);
+	await saveSiteTaskReport(c.env.DB, {
+		kind: "verify-active",
+		runs_at: result.runs_at,
+		report: result,
+	});
 	if (result.items.length > 0) {
 		await invalidateSelectionHotCache(c.env.KV_HOT);
 	}
@@ -507,6 +525,29 @@ sites.post("/recovery-evaluate", async (c) => {
 				Boolean(item),
 		);
 	const report = await buildVerificationBatchResult(verificationItems);
+	await saveSiteTaskReport(c.env.DB, {
+		kind: "verify-disabled",
+		runs_at: report.runs_at,
+		report,
+	});
+	return c.json(report);
+});
+
+sites.post("/refresh-active", async (c) => {
+	const result = await refreshActiveChannelsViaWorker(c.env.DB, c.env);
+	const report = {
+		summary: result.summary,
+		items: result.items,
+		runs_at: result.runsAt,
+	};
+	await saveSiteTaskReport(c.env.DB, {
+		kind: "refresh-active",
+		runs_at: report.runs_at,
+		report,
+	});
+	if (result.summary.success > 0) {
+		await invalidateSelectionHotCache(c.env.KV_HOT);
+	}
 	return c.json(report);
 });
 
@@ -525,6 +566,18 @@ sites.post("/:id/checkin", async (c) => {
 		result: result.result,
 		runs_at: result.runsAt,
 	});
+});
+
+sites.post("/:id/refresh", async (c) => {
+	const id = c.req.param("id");
+	const result = await refreshChannelById(c.env.DB, c.env, id);
+	if (!result) {
+		return jsonError(c, 404, "site_not_found", "site_not_found");
+	}
+	if (result.status === "success") {
+		await invalidateSelectionHotCache(c.env.KV_HOT);
+	}
+	return c.json(result);
 });
 
 export default sites;

@@ -358,7 +358,7 @@ export const SettingsView = ({
 						<div class="app-settings-row">
 							<div class="app-settings-row__main">
 								<span class="app-settings-row__label">
-									启用已禁用站点自动恢复评估
+									启用停用渠道自动恢复检查
 								</span>
 								<p class="app-settings-row__hint">
 									每天按设定时间对已禁用站点执行统一验证，只有通过真实服务验证才自动恢复
@@ -379,10 +379,10 @@ export const SettingsView = ({
 									class="app-settings-row__label"
 									for="channel-recovery-probe-schedule-time"
 								>
-									评估时间（中国时间）
+									自动检查时间（中国时间）
 								</label>
 								<p class="app-settings-row__hint">
-									每天执行已禁用站点评估恢复任务的时间
+									每天执行停用渠道自动恢复检查的时间
 								</p>
 							</div>
 							<Input

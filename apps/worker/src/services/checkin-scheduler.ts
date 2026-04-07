@@ -21,6 +21,8 @@ import {
 	recoverDisabledChannelsViaWorker,
 	runCheckinAllViaWorker,
 } from "./site-task-dispatcher";
+import { buildVerificationBatchResult } from "./site-verification";
+import { saveSiteTaskReport } from "./site-task-report-store";
 
 const SCHEDULER_NAME = "checkin-scheduler";
 const LAST_RUN_DATE_KEY = "last_run_date";
@@ -129,7 +131,13 @@ export class CheckinScheduler {
 		const checkinLastRunDate =
 			(await this.state.storage.get<string>(LAST_RUN_DATE_KEY)) ?? null;
 		if (shouldRunCheckin(now, checkinScheduleTime, checkinLastRunDate)) {
-			await runCheckinAllViaWorker(this.env.DB, this.env, now);
+			const result = await runCheckinAllViaWorker(this.env.DB, this.env, now);
+			await saveSiteTaskReport(this.env.DB, {
+				kind: "checkin",
+				runs_at: result.runsAt,
+				summary: result.summary,
+				items: result.results,
+			});
 			await this.state.storage.put(LAST_RUN_DATE_KEY, beijingDateString(now));
 		}
 		const channelRecoveryEnabled = await getChannelRecoveryProbeEnabled(
@@ -153,6 +161,21 @@ export class CheckinScheduler {
 					this.env.DB,
 					this.env,
 				);
+				const verificationItems = recoveryResult.items
+					.map((item) => item.verification)
+					.filter(
+						(
+							item,
+						): item is NonNullable<
+							(typeof recoveryResult.items)[number]["verification"]
+						> => Boolean(item),
+					);
+				const report = await buildVerificationBatchResult(verificationItems);
+				await saveSiteTaskReport(this.env.DB, {
+					kind: "verify-disabled",
+					runs_at: report.runs_at,
+					report,
+				});
 				if (recoveryResult.recovered > 0) {
 					await invalidateSelectionHotCache(this.env.KV_HOT);
 				}

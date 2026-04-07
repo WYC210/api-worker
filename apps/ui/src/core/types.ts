@@ -116,6 +116,26 @@ export type SiteVerificationBatchReport = {
 	runs_at: string;
 };
 
+export type SiteChannelRefreshItem = {
+	site_id: string;
+	site_name: string;
+	status: "success" | "failed";
+	message: string;
+	models: string[];
+};
+
+export type SiteChannelRefreshBatchSummary = {
+	total: number;
+	success: number;
+	failed: number;
+};
+
+export type SiteChannelRefreshBatchReport = {
+	summary: SiteChannelRefreshBatchSummary;
+	items: SiteChannelRefreshItem[];
+	runs_at: string;
+};
+
 export type Token = {
 	id: string;
 	name: string;
@@ -422,6 +442,34 @@ export type CheckinSummary = {
 	failed: number;
 	skipped: number;
 };
+
+export type SiteTaskKind =
+	| "checkin"
+	| "verify-active"
+	| "verify-disabled"
+	| "refresh-active";
+
+export type SiteTaskResultState =
+	| {
+			kind: "checkin";
+			runs_at: string;
+			summary: CheckinSummary;
+			items: CheckinResultItem[];
+	  }
+	| {
+			kind: "verify-active" | "verify-disabled";
+			runs_at: string;
+			report: SiteVerificationBatchReport;
+	  }
+	| {
+			kind: "refresh-active";
+			runs_at: string;
+			report: SiteChannelRefreshBatchReport;
+	  };
+
+export type SiteTaskReportMap = Partial<
+	Record<SiteTaskKind, SiteTaskResultState>
+>;
 
 export type NoticeTone = "success" | "warning" | "error" | "info";
 

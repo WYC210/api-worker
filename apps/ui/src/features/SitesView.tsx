@@ -18,15 +18,25 @@ import {
 } from "../components/ui";
 import {
 	getSiteCheckinLabel,
+	getPrimaryVerificationIssue,
+	getSuggestedActionLabel,
 	getSiteTypeLabel,
+	getVerificationSeverityLabel,
+	getVerificationSeverityRank,
 	getVerificationVerdictLabel,
 	type SiteSortKey,
 	type SiteSortState,
 } from "../core/sites";
-import type { CheckinSummary, Site, SiteForm } from "../core/types";
+import type {
+	Site,
+	SiteChannelRefreshItem,
+	SiteForm,
+	SiteTaskKind,
+	SiteTaskReportMap,
+	SiteVerificationResult,
+} from "../core/types";
 import {
 	buildPageItems,
-	formatDateTime,
 	getBeijingDateString,
 	loadColumnPrefs,
 	persistColumnPrefs,
@@ -41,8 +51,7 @@ type SitesViewProps = {
 	pagedSites: Site[];
 	editingSite: Site | null;
 	isSiteModalOpen: boolean;
-	summary: CheckinSummary | null;
-	lastRun: string | null;
+	taskReports: SiteTaskReportMap;
 	siteSearch: string;
 	siteSort: SiteSortState;
 	isActionPending: (key: string) => boolean;
@@ -52,6 +61,7 @@ type SitesViewProps = {
 	onSubmit: (event: Event) => void;
 	onVerify: (id: string) => void;
 	onCheckin: (site: Site) => void;
+	onRefreshSite: (site: Site) => void;
 	onToggle: (id: string, status: string) => void;
 	onDelete: (site: Site) => void;
 	onPageChange: (next: number) => void;
@@ -62,8 +72,9 @@ type SitesViewProps = {
 	onRunAll: () => void;
 	onVerifyAll: () => void;
 	onEvaluateRecovery: () => void;
-	failureCount?: number;
-	onOpenVerificationReport?: () => void;
+	onRefreshAll: () => void;
+	onDisableFailedSite: (site: SiteVerificationResult) => void;
+	onDisableAllFailedSites: () => void;
 };
 
 const pageSizeOptions = [10, 20, 50];
@@ -107,6 +118,40 @@ const columnTooltips: Partial<Record<SiteSortKey, string>> = {
 	checkin: "展示今天的签到结果。",
 };
 
+const siteTaskButtons: Array<{
+	kind: SiteTaskKind;
+	label: string;
+	pendingLabel: string;
+}> = [
+	{
+		kind: "checkin",
+		label: "签到已启用站点",
+		pendingLabel: "签到中...",
+	},
+	{
+		kind: "verify-active",
+		label: "检查启用渠道",
+		pendingLabel: "检查中...",
+	},
+	{
+		kind: "verify-disabled",
+		label: "检查停用渠道",
+		pendingLabel: "检查中...",
+	},
+	{
+		kind: "refresh-active",
+		label: "更新启用渠道",
+		pendingLabel: "更新中...",
+	},
+];
+
+const formatTaskTime = (value: string) =>
+	new Date(value).toLocaleTimeString("zh-CN", {
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	});
+
 export const SitesView = ({
 	siteForm,
 	sitePage,
@@ -116,8 +161,7 @@ export const SitesView = ({
 	pagedSites,
 	editingSite,
 	isSiteModalOpen,
-	summary,
-	lastRun,
+	taskReports,
 	siteSearch,
 	siteSort,
 	isActionPending,
@@ -127,6 +171,7 @@ export const SitesView = ({
 	onSubmit,
 	onVerify,
 	onCheckin,
+	onRefreshSite,
 	onToggle,
 	onDelete,
 	onPageChange,
@@ -137,8 +182,9 @@ export const SitesView = ({
 	onRunAll,
 	onVerifyAll,
 	onEvaluateRecovery,
-	failureCount = 0,
-	onOpenVerificationReport,
+	onRefreshAll,
+	onDisableFailedSite,
+	onDisableAllFailedSites,
 }: SitesViewProps) => {
 	const isEditing = Boolean(editingSite);
 	const pageItems = buildPageItems(sitePage, siteTotalPages);
@@ -147,13 +193,39 @@ export const SitesView = ({
 	const isVerifyingAll = isActionPending("site:verifyAll");
 	const isCheckinAll = isActionPending("site:checkinAll");
 	const isRecoveryEvaluate = isActionPending("site:recoveryEvaluate");
+	const isRefreshingAll = isActionPending("site:refreshAll");
 	const [localSearch, setLocalSearch] = useState(siteSearch);
+	const [activeReportTask, setActiveReportTask] = useState<SiteTaskKind | null>(
+		null,
+	);
 	const isOfficialType =
 		siteForm.site_type === "openai" ||
 		siteForm.site_type === "anthropic" ||
 		siteForm.site_type === "gemini";
 	const needsSystemToken = !isOfficialType;
 	const isNewApi = siteForm.site_type === "new-api";
+	const checkinTask = taskReports.checkin;
+	const verifyActiveTask = taskReports["verify-active"];
+	const verifyDisabledTask = taskReports["verify-disabled"];
+	const refreshTask = taskReports["refresh-active"];
+	const failedVerificationItems =
+		verifyActiveTask?.kind === "verify-active"
+			? verifyActiveTask.report.items.filter(
+					(item) => item.verdict !== "serving",
+				)
+			: [];
+	const recoveredItems =
+		verifyDisabledTask?.kind === "verify-disabled"
+			? verifyDisabledTask.report.items.filter(
+					(item) => item.verdict === "recoverable",
+				)
+			: [];
+	const stillFailedRecoveryItems =
+		verifyDisabledTask?.kind === "verify-disabled"
+			? verifyDisabledTask.report.items.filter(
+					(item) => item.verdict !== "recoverable",
+				)
+			: [];
 	const [visibleColumns, setVisibleColumns] = useState(() => {
 		if (typeof window === "undefined") {
 			return siteColumnDefaults;
@@ -236,6 +308,116 @@ export const SitesView = ({
 		}
 		return siteSort.direction === "asc" ? "▲" : "▼";
 	};
+	const getTaskStatusText = (kind: SiteTaskKind) => {
+		if (kind === "checkin") {
+			if (!checkinTask || checkinTask.kind !== "checkin") {
+				return "暂无";
+			}
+			if (checkinTask.summary.total === 0) {
+				return `${formatTaskTime(checkinTask.runs_at)}  无站点`;
+			}
+			return `${formatTaskTime(checkinTask.runs_at)}  ${
+				checkinTask.summary.failed > 0
+					? `失败 ${checkinTask.summary.failed}`
+					: "完成"
+			}`;
+		}
+		if (kind === "verify-active") {
+			if (!verifyActiveTask || verifyActiveTask.kind !== "verify-active") {
+				return "暂无";
+			}
+			if (verifyActiveTask.report.summary.total === 0) {
+				return `${formatTaskTime(verifyActiveTask.runs_at)}  无站点`;
+			}
+			return `${formatTaskTime(verifyActiveTask.runs_at)}  ${
+				failedVerificationItems.length > 0
+					? `异常 ${failedVerificationItems.length}`
+					: "正常"
+			}`;
+		}
+		if (kind === "verify-disabled") {
+			if (
+				!verifyDisabledTask ||
+				verifyDisabledTask.kind !== "verify-disabled"
+			) {
+				return "暂无";
+			}
+			if (verifyDisabledTask.report.summary.total === 0) {
+				return `${formatTaskTime(verifyDisabledTask.runs_at)}  无站点`;
+			}
+			return `${formatTaskTime(verifyDisabledTask.runs_at)}  ${
+				recoveredItems.length > 0 ? `恢复 ${recoveredItems.length}` : "未恢复"
+			}`;
+		}
+		if (!refreshTask || refreshTask.kind !== "refresh-active") {
+			return "暂无";
+		}
+		if (refreshTask.report.summary.total === 0) {
+			return `${formatTaskTime(refreshTask.runs_at)}  无站点`;
+		}
+		return `${formatTaskTime(refreshTask.runs_at)}  ${
+			refreshTask.report.summary.failed > 0
+				? `失败 ${refreshTask.report.summary.failed}`
+				: "完成"
+		}`;
+	};
+	const getTaskStatusClass = (kind: SiteTaskKind) => {
+		if (!taskReports[kind]) {
+			return "border-white/60 bg-white/65 text-[color:var(--app-ink-muted)]/80";
+		}
+		if (kind === "checkin") {
+			return checkinTask &&
+				checkinTask.kind === "checkin" &&
+				checkinTask.summary.failed > 0
+				? "border-amber-200 bg-amber-50/90 text-amber-700"
+				: "border-slate-200 bg-slate-50/90 text-slate-600";
+		}
+		if (kind === "verify-active") {
+			const hasHardFailure = failedVerificationItems.some(
+				(item) => item.verdict === "failed",
+			);
+			if (hasHardFailure) {
+				return "border-rose-200 bg-rose-50/90 text-rose-700";
+			}
+			if (failedVerificationItems.length > 0) {
+				return "border-amber-200 bg-amber-50/90 text-amber-700";
+			}
+			return "border-slate-200 bg-slate-50/90 text-slate-600";
+		}
+		if (kind === "verify-disabled") {
+			return recoveredItems.length > 0
+				? "border-emerald-200 bg-emerald-50/90 text-emerald-700"
+				: "border-slate-200 bg-slate-50/90 text-slate-600";
+		}
+		return refreshTask &&
+			refreshTask.kind === "refresh-active" &&
+			refreshTask.report.summary.failed > 0
+			? "border-amber-200 bg-amber-50/90 text-amber-700"
+			: "border-slate-200 bg-slate-50/90 text-slate-600";
+	};
+	const openTaskReport = (kind: SiteTaskKind) => {
+		const hasReport = Boolean(taskReports[kind]);
+		if (!hasReport) {
+			return;
+		}
+		setActiveReportTask(kind);
+	};
+	const closeTaskReport = () => setActiveReportTask(null);
+	const runTask = (kind: SiteTaskKind) => {
+		if (kind === "checkin") {
+			onRunAll();
+			return;
+		}
+		if (kind === "verify-active") {
+			onVerifyAll();
+			return;
+		}
+		if (kind === "verify-disabled") {
+			onEvaluateRecovery();
+			return;
+		}
+		onRefreshAll();
+	};
 	const displayPages = siteTotal === 0 ? 0 : siteTotalPages;
 	useEffect(() => {
 		if (!isSiteModalOpen) {
@@ -261,73 +443,412 @@ export const SitesView = ({
 		}, 300);
 		return () => window.clearTimeout(timer);
 	}, [localSearch, onSearchChange, siteSearch]);
+	const renderTaskReportDialog = () => {
+		if (!activeReportTask) {
+			return null;
+		}
+		if (activeReportTask === "checkin") {
+			if (!checkinTask || checkinTask.kind !== "checkin") {
+				return null;
+			}
+			const items = [...checkinTask.items].sort((left, right) => {
+				const rank = { failed: 0, skipped: 1, success: 2 };
+				const diff = rank[left.status] - rank[right.status];
+				return diff !== 0 ? diff : left.name.localeCompare(right.name);
+			});
+			return (
+				<Dialog open={Boolean(activeReportTask)} onClose={closeTaskReport}>
+					<DialogContent class="max-w-4xl" aria-modal="true">
+						<DialogHeader>
+							<div>
+								<DialogTitle>签到已启用站点</DialogTitle>
+								<DialogDescription>
+									最后记录 {formatTaskTime(checkinTask.runs_at)}。
+								</DialogDescription>
+							</div>
+							<Button size="sm" type="button" onClick={closeTaskReport}>
+								关闭
+							</Button>
+						</DialogHeader>
+						<div class="mt-3 max-h-[55vh] space-y-2 overflow-y-auto">
+							{items.length === 0 ? (
+								<p class="text-xs text-[color:var(--app-ink-muted)]">
+									当前没有开启签到的站点。
+								</p>
+							) : (
+								items.map((item) => (
+									<div
+										class="grid gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]"
+										key={item.id}
+									>
+										<div class="min-w-0">
+											<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
+												{item.name}
+											</p>
+											<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+												{item.status === "failed"
+													? "失败"
+													: item.status === "skipped"
+														? "已签"
+														: "成功"}
+											</p>
+										</div>
+										<p class="text-xs text-[color:var(--app-ink)]">
+											{item.message || "-"}
+										</p>
+									</div>
+								))
+							)}
+						</div>
+					</DialogContent>
+				</Dialog>
+			);
+		}
+		if (activeReportTask === "verify-active") {
+			if (!verifyActiveTask || verifyActiveTask.kind !== "verify-active") {
+				return null;
+			}
+			const items = [...failedVerificationItems].sort((left, right) => {
+				const diff =
+					getVerificationSeverityRank(left.verdict) -
+					getVerificationSeverityRank(right.verdict);
+				return diff !== 0
+					? diff
+					: left.site_name.localeCompare(right.site_name);
+			});
+			const failedItems = items.filter((item) => item.verdict === "failed");
+			return (
+				<Dialog open={Boolean(activeReportTask)} onClose={closeTaskReport}>
+					<DialogContent class="max-w-4xl" aria-modal="true">
+						<DialogHeader>
+							<div>
+								<DialogTitle>检查启用渠道</DialogTitle>
+								<DialogDescription>
+									最后记录 {formatTaskTime(verifyActiveTask.runs_at)}。
+								</DialogDescription>
+							</div>
+							<Button size="sm" type="button" onClick={closeTaskReport}>
+								关闭
+							</Button>
+						</DialogHeader>
+						<div class="mt-3 max-h-[55vh] space-y-2 overflow-y-auto">
+							{items.length === 0 ? (
+								<p class="text-xs text-[color:var(--app-ink-muted)]">
+									本次无异常。
+								</p>
+							) : (
+								items.map((item) => (
+									<div
+										class="grid gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]"
+										key={item.site_id}
+									>
+										<div class="min-w-0">
+											<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
+												{item.site_name}
+											</p>
+											<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+												{getVerificationSeverityLabel(item.verdict)} ·{" "}
+												{getVerificationVerdictLabel(item.verdict)}
+											</p>
+										</div>
+										<div class="space-y-1">
+											<p class="text-xs text-[color:var(--app-ink)]">
+												{getPrimaryVerificationIssue(item)}
+											</p>
+											<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+												建议：{getSuggestedActionLabel(item.suggested_action)}
+											</p>
+										</div>
+										<div class="flex flex-wrap items-center justify-end gap-2">
+											<Button
+												size="sm"
+												type="button"
+												class="h-8 px-3 text-xs"
+												disabled={isActionPending(
+													`site:verify:${item.site_id}`,
+												)}
+												onClick={() => onVerify(item.site_id)}
+											>
+												重新检查
+											</Button>
+											<Button
+												size="sm"
+												type="button"
+												variant="danger"
+												class="h-8 px-3 text-xs"
+												disabled={isActionPending(
+													`site:disableFailed:${item.site_id}`,
+												)}
+												onClick={() => onDisableFailedSite(item)}
+											>
+												禁用
+											</Button>
+										</div>
+									</div>
+								))
+							)}
+						</div>
+						<DialogFooter>
+							<Button size="sm" type="button" onClick={closeTaskReport}>
+								关闭
+							</Button>
+							<Button
+								size="sm"
+								type="button"
+								variant="danger"
+								disabled={
+									failedItems.length === 0 ||
+									isActionPending("site:disableFailedAll")
+								}
+								onClick={onDisableAllFailedSites}
+							>
+								{isActionPending("site:disableFailedAll")
+									? "禁用中..."
+									: "禁用全部失败站点"}
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
+			);
+		}
+		if (activeReportTask === "verify-disabled") {
+			if (
+				!verifyDisabledTask ||
+				verifyDisabledTask.kind !== "verify-disabled"
+			) {
+				return null;
+			}
+			return (
+				<Dialog open={Boolean(activeReportTask)} onClose={closeTaskReport}>
+					<DialogContent class="max-w-4xl" aria-modal="true">
+						<DialogHeader>
+							<div>
+								<DialogTitle>检查停用渠道</DialogTitle>
+								<DialogDescription>
+									最后记录 {formatTaskTime(verifyDisabledTask.runs_at)}。
+								</DialogDescription>
+							</div>
+							<Button size="sm" type="button" onClick={closeTaskReport}>
+								关闭
+							</Button>
+						</DialogHeader>
+						<div class="mt-3 max-h-[55vh] space-y-4 overflow-y-auto">
+							<div class="space-y-2">
+								<p class="text-[11px] font-semibold text-[color:var(--app-ink-muted)]">
+									已自动启用
+								</p>
+								{recoveredItems.length === 0 ? (
+									<p class="text-xs text-[color:var(--app-ink-muted)]">
+										本次无自动启用。
+									</p>
+								) : (
+									recoveredItems.map((item) => (
+										<div
+											class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.5fr)] gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3"
+											key={item.site_id}
+										>
+											<div class="min-w-0">
+												<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
+													{item.site_name}
+												</p>
+												<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+													已自动启用
+												</p>
+											</div>
+											<div class="min-w-0">
+												<p class="text-[11px] font-semibold text-[color:var(--app-ink-muted)]">
+													结果
+												</p>
+												<p class="mt-1 text-xs text-[color:var(--app-ink)]">
+													{item.message}
+												</p>
+											</div>
+										</div>
+									))
+								)}
+							</div>
+							<div class="space-y-2">
+								<p class="text-[11px] font-semibold text-[color:var(--app-ink-muted)]">
+									仍未恢复
+								</p>
+								{stillFailedRecoveryItems.length === 0 ? (
+									<p class="text-xs text-[color:var(--app-ink-muted)]">
+										本次已全部恢复。
+									</p>
+								) : (
+									stillFailedRecoveryItems.map((item) => (
+										<div
+											class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.5fr)] gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3"
+											key={item.site_id}
+										>
+											<div class="min-w-0">
+												<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
+													{item.site_name}
+												</p>
+												<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+													仍未恢复
+												</p>
+											</div>
+											<div class="min-w-0">
+												<p class="text-[11px] font-semibold text-[color:var(--app-ink-muted)]">
+													问题
+												</p>
+												<p class="mt-1 text-xs text-[color:var(--app-ink)]">
+													{getPrimaryVerificationIssue(item)}
+												</p>
+											</div>
+										</div>
+									))
+								)}
+							</div>
+						</div>
+					</DialogContent>
+				</Dialog>
+			);
+		}
+		if (!refreshTask || refreshTask.kind !== "refresh-active") {
+			return null;
+		}
+		const items = [...refreshTask.report.items].sort((left, right) => {
+			if (left.status === right.status) {
+				return left.site_name.localeCompare(right.site_name);
+			}
+			return left.status === "failed" ? -1 : 1;
+		});
+		return (
+			<Dialog open={Boolean(activeReportTask)} onClose={closeTaskReport}>
+				<DialogContent class="max-w-4xl" aria-modal="true">
+					<DialogHeader>
+						<div>
+							<DialogTitle>更新启用渠道</DialogTitle>
+							<DialogDescription>
+								最后记录 {formatTaskTime(refreshTask.runs_at)}。
+							</DialogDescription>
+						</div>
+						<Button size="sm" type="button" onClick={closeTaskReport}>
+							关闭
+						</Button>
+					</DialogHeader>
+					<div class="mt-3 max-h-[55vh] space-y-2 overflow-y-auto">
+						{items.length === 0 ? (
+							<p class="text-xs text-[color:var(--app-ink-muted)]">
+								当前没有启用渠道可更新。
+							</p>
+						) : (
+							items.map((item: SiteChannelRefreshItem) => (
+								<div
+									class="grid gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]"
+									key={item.site_id}
+								>
+									<div class="min-w-0">
+										<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
+											{item.site_name}
+										</p>
+										<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+											{item.status === "failed" ? "失败" : "完成"}
+										</p>
+									</div>
+									<div class="space-y-1">
+										<p class="text-xs text-[color:var(--app-ink)]">
+											{item.message}
+										</p>
+										<p class="text-[11px] text-[color:var(--app-ink-muted)]">
+											{item.models.length > 0
+												? `${item.models.length} 个模型`
+												: "未更新模型"}
+										</p>
+									</div>
+									<div class="flex justify-end">
+										<Button
+											size="sm"
+											type="button"
+											class="h-8 px-3 text-xs"
+											disabled={isActionPending(`site:refresh:${item.site_id}`)}
+											onClick={() =>
+												onRefreshSite(
+													pagedSites.find(
+														(site) => site.id === item.site_id,
+													) ?? {
+														id: item.site_id,
+														name: item.site_name,
+														base_url: "",
+														weight: 1,
+														status: "active",
+														site_type: "new-api",
+														call_tokens: [],
+													},
+												)
+											}
+										>
+											重新更新
+										</Button>
+									</div>
+								</div>
+							))
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
+		);
+	};
 	return (
 		<div class="space-y-5">
 			<div class="app-panel animate-fade-up space-y-4">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div>
+				<div class="flex items-start gap-3">
+					<div class="min-w-0 flex-1">
 						<h3 class="app-title text-lg">站点管理</h3>
 						<p class="app-subtitle">
-							统一维护调用令牌、系统令牌与站点类型，并支持验证、签到与恢复评估。
+							统一维护调用令牌、系统令牌与站点类型，并支持签到、检查、恢复与更新。
 						</p>
 					</div>
-					<div class="flex flex-wrap items-center gap-2">
-						{summary && (
-							<div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--app-ink-muted)]">
-								<span>总计 {summary.total}</span>
-								<span class="text-[color:var(--app-success)]">
-									成功 {summary.success}
-								</span>
-								<span>已签 {summary.skipped}</span>
-								<span class="text-[color:var(--app-danger)]">
-									失败 {summary.failed}
-								</span>
-							</div>
-						)}
-						<ColumnPicker
-							columns={siteColumnOptions}
-							value={visibleColumns}
-							onChange={updateVisibleColumns}
-						/>
+					<div class="ml-auto flex max-w-full flex-nowrap items-center justify-end gap-2 overflow-x-auto pb-1">
+						<div class="shrink-0">
+							<ColumnPicker
+								columns={siteColumnOptions}
+								value={visibleColumns}
+								onChange={updateVisibleColumns}
+							/>
+						</div>
+						{siteTaskButtons.map((task) => {
+							const pending =
+								task.kind === "checkin"
+									? isCheckinAll
+									: task.kind === "verify-active"
+										? isVerifyingAll
+										: task.kind === "verify-disabled"
+											? isRecoveryEvaluate
+											: isRefreshingAll;
+							return (
+								<div
+									class="flex shrink-0 items-center gap-1.5 rounded-full border border-white/70 bg-white/72 px-1.5 py-1 shadow-[0_6px_18px_rgba(15,23,42,0.04)]"
+									key={task.kind}
+								>
+									<Button
+										class="h-8 whitespace-nowrap rounded-full px-3 text-xs"
+										size="sm"
+										type="button"
+										disabled={pending}
+										onClick={() => runTask(task.kind)}
+									>
+										{pending ? task.pendingLabel : task.label}
+									</Button>
+									<button
+										class={`inline-flex h-8 items-center rounded-full border px-3 text-[11px] leading-none ${
+											taskReports[task.kind]
+												? `${getTaskStatusClass(task.kind)} transition-colors hover:brightness-[0.98]`
+												: `${getTaskStatusClass(task.kind)} cursor-default`
+										}`}
+										type="button"
+										disabled={!taskReports[task.kind]}
+										onClick={() => openTaskReport(task.kind)}
+									>
+										{getTaskStatusText(task.kind)}
+									</button>
+								</div>
+							);
+						})}
 						<Button
-							class="h-9 px-4 text-xs"
-							size="sm"
-							type="button"
-							disabled={isCheckinAll}
-							onClick={onRunAll}
-						>
-							{isCheckinAll ? "批量签到中..." : "批量签到"}
-						</Button>
-						<Button
-							class="h-9 px-4 text-xs"
-							size="sm"
-							type="button"
-							disabled={isVerifyingAll}
-							onClick={onVerifyAll}
-						>
-							{isVerifyingAll ? "批量验证中..." : "批量验证"}
-						</Button>
-						<Button
-							class="h-9 px-4 text-xs"
-							size="sm"
-							type="button"
-							disabled={isRecoveryEvaluate}
-							onClick={onEvaluateRecovery}
-						>
-							{isRecoveryEvaluate ? "评估中..." : "评估恢复"}
-						</Button>
-						<Button
-							class="h-9 px-4 text-xs"
-							size="sm"
-							type="button"
-							disabled={failureCount <= 0 || !onOpenVerificationReport}
-							onClick={() => onOpenVerificationReport?.()}
-						>
-							验证报告
-							{failureCount > 0 ? ` (${failureCount})` : ""}
-						</Button>
-						<Button
-							class="h-9 px-4 text-xs"
+							class="h-9 shrink-0 px-4 text-xs"
 							size="sm"
 							variant="primary"
 							type="button"
@@ -408,6 +929,9 @@ export const SitesView = ({
 								const verifyPending = isActionPending(`site:verify:${site.id}`);
 								const checkinPending = isActionPending(
 									`site:checkin:${site.id}`,
+								);
+								const refreshPending = isActionPending(
+									`site:refresh:${site.id}`,
 								);
 								const togglePending = isActionPending(`site:toggle:${site.id}`);
 								const deletePending = isActionPending(`site:delete:${site.id}`);
@@ -522,6 +1046,16 @@ export const SitesView = ({
 												class="h-9 w-full px-3 text-xs"
 												size="sm"
 												type="button"
+												disabled={refreshPending || !isActive}
+												title={!isActive ? "仅启用渠道可更新" : undefined}
+												onClick={() => onRefreshSite(site)}
+											>
+												{refreshPending ? "更新中..." : "更新渠道"}
+											</Button>
+											<Button
+												class="h-9 w-full px-3 text-xs"
+												size="sm"
+												type="button"
 												disabled={togglePending}
 												onClick={() => onToggle(site.id, site.status)}
 											>
@@ -612,6 +1146,9 @@ export const SitesView = ({
 									);
 									const checkinPending = isActionPending(
 										`site:checkin:${site.id}`,
+									);
+									const refreshPending = isActionPending(
+										`site:refresh:${site.id}`,
 									);
 									const togglePending = isActionPending(
 										`site:toggle:${site.id}`,
@@ -723,6 +1260,16 @@ export const SitesView = ({
 														class="h-9 px-3 text-xs"
 														size="sm"
 														type="button"
+														disabled={refreshPending || !isActive}
+														title={!isActive ? "仅启用渠道可更新" : undefined}
+														onClick={() => onRefreshSite(site)}
+													>
+														{refreshPending ? "更新中..." : "更新渠道"}
+													</Button>
+													<Button
+														class="h-9 px-3 text-xs"
+														size="sm"
+														type="button"
 														disabled={togglePending}
 														onClick={() => onToggle(site.id, site.status)}
 													>
@@ -789,12 +1336,8 @@ export const SitesView = ({
 						</div>
 					</div>
 				</div>
-				{lastRun && (
-					<p class="mt-3 text-xs text-[color:var(--app-ink-muted)]">
-						最近执行时间：{formatDateTime(lastRun)}
-					</p>
-				)}
 			</div>
+			{renderTaskReportDialog()}
 			{isSiteModalOpen && (
 				<Dialog open={isSiteModalOpen} onClose={onCloseModal}>
 					<DialogContent

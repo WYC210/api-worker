@@ -67,6 +67,70 @@ export const getVerificationVerdictLabel = (verdict: VerificationVerdict) => {
 	return "不可服务";
 };
 
+export const getSuggestedActionLabel = (action: string) => {
+	if (action === "fix_credentials") {
+		return "检查站点或调用令牌";
+	}
+	if (action === "fix_endpoint") {
+		return "检查站点地址与 endpoint 配置";
+	}
+	if (action === "fix_model_config") {
+		return "补充模型配置或模型映射";
+	}
+	if (action === "retry") {
+		return "稍后重试";
+	}
+	if (action === "manual_review") {
+		return "需要人工排查";
+	}
+	return "无需额外处理";
+};
+
+export const getPrimaryVerificationIssue = (result: SiteVerificationResult) => {
+	if (result.stages.service.status === "fail") {
+		return result.stages.service.message;
+	}
+	if (result.stages.capability.status === "fail") {
+		return result.stages.capability.message;
+	}
+	if (result.stages.connectivity.status === "fail") {
+		return result.stages.connectivity.message;
+	}
+	if (result.stages.recovery.status === "fail") {
+		return result.stages.recovery.message;
+	}
+	if (result.stages.capability.status === "warn") {
+		return result.stages.capability.message;
+	}
+	return result.message;
+};
+
+export const getVerificationSeverityRank = (verdict: VerificationVerdict) => {
+	if (verdict === "degraded" || verdict === "recoverable") {
+		return 1;
+	}
+	if (verdict === "failed" || verdict === "not_recoverable") {
+		return 2;
+	}
+	return 0;
+};
+
+export const getVerificationSeverityLabel = (verdict: VerificationVerdict) => {
+	if (verdict === "degraded") {
+		return "轻微";
+	}
+	if (verdict === "recoverable") {
+		return "可恢复";
+	}
+	if (verdict === "not_recoverable") {
+		return "未恢复";
+	}
+	if (verdict === "failed") {
+		return "严重";
+	}
+	return "正常";
+};
+
 export const summarizeVerificationResults = (
 	items: SiteVerificationResult[],
 ): SiteVerificationBatchSummary => {

@@ -13,7 +13,10 @@ import {
 	updateChannelCheckinResult,
 } from "./channel-repo";
 import { getProxyRuntimeSettings } from "./settings";
-import { listCallTokens } from "./channel-call-token-repo";
+import {
+	listCallTokens,
+	updateCallTokenModels,
+} from "./channel-call-token-repo";
 import { runDisabledChannelRecoveryProbe } from "./channel-recovery-task";
 import {
 	buildVerificationBatchResult,
@@ -30,11 +33,18 @@ import type {
 	SiteTaskTestResponse,
 } from "./site-task-contract";
 import { testChannelTokens } from "./channel-testing";
+import { modelsToJson } from "./channel-models";
+import { upsertChannelModelCapabilities } from "./channel-model-capabilities";
 
 type SiteTaskRuntime = {
 	concurrency: number;
 	timeoutMs: number;
-	fallbackEnabled: boolean;
+};
+
+type SiteTaskDispatchMode = "main" | "attempt";
+
+type SiteTaskDispatchOptions = {
+	mode?: SiteTaskDispatchMode;
 };
 
 type InternalWorkerResponse = {
@@ -69,6 +79,24 @@ export type DisabledChannelRecoveryBatchResult = {
 	recovered: number;
 	failed: number;
 	items: DisabledChannelRecoveryResult[];
+};
+
+export type SiteChannelRefreshItem = {
+	site_id: string;
+	site_name: string;
+	status: "success" | "failed";
+	message: string;
+	models: string[];
+};
+
+export type SiteChannelRefreshBatchResult = {
+	summary: {
+		total: number;
+		success: number;
+		failed: number;
+	};
+	items: SiteChannelRefreshItem[];
+	runsAt: string;
 };
 
 export async function verifyChannelById(
@@ -251,7 +279,6 @@ async function getSiteTaskRuntime(db: D1Database): Promise<SiteTaskRuntime> {
 	return {
 		concurrency: Math.max(1, runtimeSettings.site_task_concurrency),
 		timeoutMs: Math.max(1, runtimeSettings.site_task_timeout_ms),
-		fallbackEnabled: runtimeSettings.site_task_fallback_enabled,
 	};
 }
 
@@ -264,12 +291,25 @@ async function dispatchWithFallback<T>(
 ): Promise<T> {
 	try {
 		return await callAttemptWorker<T>(env, path, payload, runtime.timeoutMs);
-	} catch (error) {
-		if (!runtime.fallbackEnabled) {
-			throw error;
-		}
+	} catch {
 		return fallback();
 	}
+}
+
+async function dispatchSiteTask<T>(
+	env: Bindings,
+	runtime: SiteTaskRuntime,
+	path: string,
+	payload: unknown,
+	runLocally: () => Promise<T>,
+	options?: SiteTaskDispatchOptions,
+): Promise<T> {
+	// Site tasks now run on the main worker by default. If a caller explicitly
+	// opts into attempt-worker offload, any offload failure falls back locally.
+	if (options?.mode !== "attempt") {
+		return runLocally();
+	}
+	return dispatchWithFallback(env, runtime, path, payload, runLocally);
 }
 
 async function mapWithConcurrency<T, R>(
@@ -300,14 +340,16 @@ export async function executeSiteTestTask(
 	db: D1Database,
 	env: Bindings,
 	payload: SiteTaskTestRequest,
+	options?: SiteTaskDispatchOptions,
 ): Promise<SiteTaskTestResponse> {
 	const runtime = await getSiteTaskRuntime(db);
-	return dispatchWithFallback(
+	return dispatchSiteTask(
 		env,
 		runtime,
 		"/internal/site-task/test",
 		payload,
 		() => testChannelTokens(payload.base_url, payload.tokens),
+		options,
 	);
 }
 
@@ -324,9 +366,10 @@ export async function executeSiteCheckinTask(
 			system_userid?: string | null;
 		};
 	},
+	options?: SiteTaskDispatchOptions,
 ): Promise<SiteTaskCheckinResponse> {
 	const runtime = await getSiteTaskRuntime(db);
-	return dispatchWithFallback(
+	return dispatchSiteTask(
 		env,
 		runtime,
 		"/internal/site-task/checkin",
@@ -334,6 +377,7 @@ export async function executeSiteCheckinTask(
 		async () => ({
 			result: await runCheckin(payload.site),
 		}),
+		options,
 	);
 }
 
@@ -341,9 +385,10 @@ export async function executeSiteProbeTask(
 	db: D1Database,
 	env: Bindings,
 	payload: SiteTaskProbeRequest,
+	options?: SiteTaskDispatchOptions,
 ): Promise<SiteTaskProbeResponse> {
 	const runtime = await getSiteTaskRuntime(db);
-	return dispatchWithFallback(
+	return dispatchSiteTask(
 		env,
 		runtime,
 		"/internal/site-task/probe",
@@ -354,6 +399,7 @@ export async function executeSiteProbeTask(
 				payload.tokens,
 			),
 		}),
+		options,
 	);
 }
 
@@ -486,6 +532,71 @@ export async function runCheckinAllViaWorker(
 	};
 }
 
+async function refreshChannelModels(
+	db: D1Database,
+	env: Bindings,
+	channel: Awaited<ReturnType<typeof getChannelById>>,
+): Promise<SiteChannelRefreshItem> {
+	if (!channel) {
+		return {
+			site_id: "",
+			site_name: "",
+			status: "failed",
+			message: "站点不存在",
+			models: [],
+		};
+	}
+	const tokenRows = await listCallTokens(db, {
+		channelIds: [channel.id],
+	});
+	const tokens =
+		tokenRows.length > 0
+			? tokenRows.map((row) => ({
+					id: row.id,
+					name: row.name,
+					api_key: row.api_key,
+				}))
+			: [
+					{
+						id: "primary",
+						name: "主调用令牌",
+						api_key: String(channel.api_key ?? ""),
+					},
+				];
+	const result = await executeSiteTestTask(db, env, {
+		base_url: String(channel.base_url),
+		tokens,
+	});
+	if (!result.ok || result.models.length === 0) {
+		return {
+			site_id: channel.id,
+			site_name: channel.name,
+			status: "failed",
+			message: result.ok ? "未拉取到模型" : "更新失败",
+			models: [],
+		};
+	}
+	const updatedAt = nowIso();
+	await db
+		.prepare("UPDATE channels SET models_json = ?, updated_at = ? WHERE id = ?")
+		.bind(modelsToJson(result.models), updatedAt, channel.id)
+		.run();
+	for (const item of result.items) {
+		if (!item.tokenId) {
+			continue;
+		}
+		await updateCallTokenModels(db, item.tokenId, item.models, updatedAt);
+	}
+	await upsertChannelModelCapabilities(db, channel.id, result.models);
+	return {
+		site_id: channel.id,
+		site_name: channel.name,
+		status: "success",
+		message: `已更新 ${result.models.length} 个模型`,
+		models: result.models,
+	};
+}
+
 async function markDisabledChannelRecovered(
 	db: D1Database,
 	channelId: string,
@@ -498,6 +609,65 @@ async function markDisabledChannelRecovered(
 		.bind("active", updatedAt, channelId, "disabled")
 		.run();
 	return Number(updateResult.meta?.changes ?? 0) > 0;
+}
+
+export async function refreshChannelById(
+	db: D1Database,
+	env: Bindings,
+	channelId: string,
+): Promise<SiteChannelRefreshItem | null> {
+	const channel = await getChannelById(db, channelId);
+	if (!channel) {
+		return null;
+	}
+	if (channel.status !== "active") {
+		return {
+			site_id: channel.id,
+			site_name: channel.name,
+			status: "failed",
+			message: "仅启用渠道可更新",
+			models: [],
+		};
+	}
+	return refreshChannelModels(db, env, channel);
+}
+
+export async function refreshActiveChannelsViaWorker(
+	db: D1Database,
+	env: Bindings,
+): Promise<SiteChannelRefreshBatchResult> {
+	const runtime = await getSiteTaskRuntime(db);
+	const channels = await listChannels(db, {
+		filters: { status: "active" },
+		orderBy: "created_at",
+		order: "DESC",
+	});
+	if (channels.length === 0) {
+		return {
+			summary: {
+				total: 0,
+				success: 0,
+				failed: 0,
+			},
+			items: [],
+			runsAt: new Date().toISOString(),
+		};
+	}
+	const items = await mapWithConcurrency(
+		channels,
+		runtime.concurrency,
+		async (channel) => refreshChannelModels(db, env, channel),
+	);
+	const success = items.filter((item) => item.status === "success").length;
+	return {
+		summary: {
+			total: items.length,
+			success,
+			failed: items.length - success,
+		},
+		items,
+		runsAt: new Date().toISOString(),
+	};
 }
 
 export async function recoverDisabledChannelsViaWorker(

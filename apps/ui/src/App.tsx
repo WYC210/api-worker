@@ -28,6 +28,7 @@ import {
 } from "./core/constants";
 import {
 	filterSites,
+	getSuggestedActionLabel,
 	getVerificationStageTone,
 	getVerificationVerdictLabel,
 	summarizeVerificationResults,
@@ -48,8 +49,11 @@ import type {
 	NoticeTone,
 	Settings,
 	SettingsForm,
+	SiteChannelRefreshBatchReport,
 	Site,
 	SiteForm,
+	SiteTaskResultState,
+	SiteTaskReportMap,
 	SiteVerificationBatchReport,
 	SiteVerificationResult,
 	SiteType,
@@ -121,12 +125,6 @@ type ConfirmState = {
 	onConfirm: () => Promise<void> | void;
 };
 
-type SiteVerificationReportState = {
-	title: string;
-	description: string;
-	report: SiteVerificationBatchReport;
-};
-
 type SiteVerificationDialogState = {
 	title: string;
 	result: SiteVerificationResult;
@@ -160,44 +158,6 @@ const getVerificationStageClass = (tone: string) => {
 		return "border-rose-200 bg-rose-50/80 text-rose-700";
 	}
 	return "border-white/60 bg-white/70 text-[color:var(--app-ink-muted)]";
-};
-
-const getSuggestedActionLabel = (action: string) => {
-	if (action === "fix_credentials") {
-		return "检查站点或调用令牌";
-	}
-	if (action === "fix_endpoint") {
-		return "检查站点地址与 endpoint 配置";
-	}
-	if (action === "fix_model_config") {
-		return "补充模型配置或模型映射";
-	}
-	if (action === "retry") {
-		return "稍后重试";
-	}
-	if (action === "manual_review") {
-		return "需要人工排查";
-	}
-	return "无需额外处理";
-};
-
-const getPrimaryVerificationIssue = (result: SiteVerificationResult) => {
-	if (result.stages.service.status === "fail") {
-		return result.stages.service.message;
-	}
-	if (result.stages.capability.status === "fail") {
-		return result.stages.capability.message;
-	}
-	if (result.stages.connectivity.status === "fail") {
-		return result.stages.connectivity.message;
-	}
-	if (result.stages.recovery.status === "fail") {
-		return result.stages.recovery.message;
-	}
-	if (result.stages.capability.status === "warn") {
-		return result.stages.capability.message;
-	}
-	return result.message;
 };
 
 const pickEditableBackupSettings = (
@@ -436,14 +396,7 @@ const App = () => {
 	}));
 	const [isSiteModalOpen, setSiteModalOpen] = useState(false);
 	const [isTokenModalOpen, setTokenModalOpen] = useState(false);
-	const [checkinSummary, setCheckinSummary] = useState<CheckinSummary | null>(
-		null,
-	);
-	const [checkinLastRun, setCheckinLastRun] = useState<string | null>(null);
-	const [siteVerificationReport, setSiteVerificationReport] =
-		useState<SiteVerificationReportState | null>(null);
-	const [isSiteVerificationReportOpen, setSiteVerificationReportOpen] =
-		useState(false);
+	const [siteTaskReports, setSiteTaskReports] = useState<SiteTaskReportMap>({});
 	const [siteVerificationDialog, setSiteVerificationDialog] =
 		useState<SiteVerificationDialogState | null>(null);
 	const [, setPendingActions] = useState<Set<string>>(() => new Set());
@@ -541,10 +494,6 @@ const App = () => {
 			setConfirmState(null);
 		}
 	}, [confirmPending]);
-
-	const closeSiteVerificationReport = useCallback(() => {
-		setSiteVerificationReportOpen(false);
-	}, []);
 
 	const closeSiteVerificationDialog = useCallback(() => {
 		setSiteVerificationDialog(null);
@@ -663,11 +612,13 @@ const App = () => {
 	const loadSites = useCallback(async () => {
 		const result = await apiFetch<{
 			sites: Site[];
+			task_reports?: SiteTaskReportMap;
 		}>("/api/sites");
 		setData((prev) => ({
 			...prev,
 			sites: result.sites,
 		}));
+		setSiteTaskReports(result.task_reports ?? {});
 	}, [apiFetch]);
 
 	const loadModels = useCallback(async () => {
@@ -1265,18 +1216,49 @@ const App = () => {
 		[],
 	);
 
-	const openVerificationReport = useCallback(
-		(
-			title: string,
-			description: string,
-			report: SiteVerificationBatchReport,
-		) => {
-			setSiteVerificationReport({
-				title,
-				description,
-				report,
+	const storeSiteTaskReport = useCallback((report: SiteTaskResultState) => {
+		if (!report) {
+			return;
+		}
+		setSiteTaskReports((prev) => ({
+			...prev,
+			[report.kind]: report,
+		}));
+	}, []);
+
+	const syncRefreshTaskItem = useCallback(
+		(item: SiteChannelRefreshBatchReport["items"][number], runsAt: string) => {
+			setSiteTaskReports((prev) => {
+				const current = prev["refresh-active"];
+				const nextItems =
+					current?.kind === "refresh-active"
+						? [
+								item,
+								...current.report.items.filter(
+									(existing) => existing.site_id !== item.site_id,
+								),
+							]
+						: [item];
+				const success = nextItems.filter(
+					(entry) => entry.status === "success",
+				).length;
+				return {
+					...prev,
+					"refresh-active": {
+						kind: "refresh-active",
+						runs_at: runsAt,
+						report: {
+							summary: {
+								total: nextItems.length,
+								success,
+								failed: nextItems.length - success,
+							},
+							items: nextItems,
+							runs_at: runsAt,
+						},
+					},
+				};
 			});
-			setSiteVerificationReportOpen(true);
 		},
 		[],
 	);
@@ -1332,9 +1314,6 @@ const App = () => {
 			return;
 		}
 		startAction(actionKey);
-		setSiteVerificationReport(null);
-		setSiteVerificationReportOpen(false);
-		pushNotice("info", "正在批量验证站点...");
 		try {
 			const report = await apiFetch<SiteVerificationBatchReport>(
 				"/api/sites/verify-batch",
@@ -1343,19 +1322,21 @@ const App = () => {
 				},
 			);
 			await loadSites();
-			openVerificationReport(
-				"批量验证报告",
-				`最近执行：${new Date(report.runs_at).toLocaleString("zh-CN", {
-					hour12: false,
-				})}`,
+			storeSiteTaskReport({
+				kind: "verify-active",
+				runs_at: report.runs_at,
 				report,
-			);
+			});
 			const summary = report.summary;
+			if (summary.total === 0) {
+				pushNotice("info", "当前没有启用渠道可检查");
+				return;
+			}
 			pushNotice(
 				summary.failed > 0 || summary.not_recoverable > 0
 					? "warning"
 					: "success",
-				`批量验证完成：可服务 ${summary.serving}，部分异常 ${summary.degraded}，不可服务 ${summary.failed}。`,
+				`检查完成：正常 ${summary.serving}，异常 ${summary.degraded + summary.failed}。`,
 			);
 		} catch (error) {
 			pushNotice("error", (error as Error).message);
@@ -1368,9 +1349,9 @@ const App = () => {
 		endAction,
 		isActionPending,
 		loadSites,
-		openVerificationReport,
 		pushNotice,
 		startAction,
+		storeSiteTaskReport,
 	]);
 
 	const handleSiteRecoveryEvaluate = useCallback(async () => {
@@ -1391,16 +1372,14 @@ const App = () => {
 				pushNotice("info", "当前没有已禁用站点需要评估恢复");
 				return;
 			}
-			openVerificationReport(
-				"恢复评估报告",
-				`最近执行：${new Date(report.runs_at).toLocaleString("zh-CN", {
-					hour12: false,
-				})}`,
+			storeSiteTaskReport({
+				kind: "verify-disabled",
+				runs_at: report.runs_at,
 				report,
-			);
+			});
 			pushNotice(
 				report.summary.recoverable > 0 ? "success" : "warning",
-				`恢复评估完成：可恢复 ${report.summary.recoverable}，暂不可恢复 ${report.summary.not_recoverable}。`,
+				`检查完成：恢复 ${report.summary.recoverable}，未恢复 ${report.summary.not_recoverable + report.summary.failed}。`,
 			);
 		} catch (error) {
 			pushNotice("error", (error as Error).message);
@@ -1412,9 +1391,9 @@ const App = () => {
 		endAction,
 		isActionPending,
 		loadSites,
-		openVerificationReport,
 		pushNotice,
 		startAction,
+		storeSiteTaskReport,
 	]);
 
 	const handleSiteSubmit = useCallback(
@@ -2144,19 +2123,24 @@ const App = () => {
 					body: JSON.stringify({ status: "disabled" }),
 				});
 				await loadSites();
-				setSiteVerificationReport((prev) => {
-					if (!prev) {
+				setSiteTaskReports((prev) => {
+					const current = prev["verify-active"];
+					if (!current || current.kind !== "verify-active") {
 						return prev;
 					}
-					const nextItems = prev.report.items.filter(
+					const nextItems = current.report.items.filter(
 						(item) => item.site_id !== site.site_id,
 					);
 					return {
 						...prev,
-						report: {
-							...prev.report,
-							items: nextItems,
-							summary: summarizeVerificationResults(nextItems),
+						"verify-active": {
+							kind: "verify-active",
+							runs_at: current.runs_at,
+							report: {
+								...current.report,
+								items: nextItems,
+								summary: summarizeVerificationResults(nextItems),
+							},
 						},
 					};
 				});
@@ -2171,9 +2155,11 @@ const App = () => {
 	);
 
 	const handleDisableAllFailedSites = useCallback(async () => {
-		const report = siteVerificationReport;
+		const report = siteTaskReports["verify-active"];
 		const failedItems =
-			report?.report.items.filter((item) => item.verdict === "failed") ?? [];
+			report?.kind === "verify-active"
+				? report.report.items.filter((item) => item.verdict === "failed")
+				: [];
 		if (!report || failedItems.length === 0) {
 			pushNotice("info", "当前没有可禁用的失败站点");
 			return;
@@ -2201,20 +2187,29 @@ const App = () => {
 				.map((item) => item.value);
 			const failedCount = settled.length - successIds.length;
 			await loadSites();
-			setSiteVerificationReport((prev) => {
-				if (!prev || successIds.length === 0) {
+			setSiteTaskReports((prev) => {
+				const current = prev["verify-active"];
+				if (
+					!current ||
+					current.kind !== "verify-active" ||
+					successIds.length === 0
+				) {
 					return prev;
 				}
 				const successSet = new Set(successIds);
-				const nextItems = prev.report.items.filter(
+				const nextItems = current.report.items.filter(
 					(item) => !successSet.has(item.site_id),
 				);
 				return {
 					...prev,
-					report: {
-						...prev.report,
-						items: nextItems,
-						summary: summarizeVerificationResults(nextItems),
+					"verify-active": {
+						kind: "verify-active",
+						runs_at: current.runs_at,
+						report: {
+							...current.report,
+							items: nextItems,
+							summary: summarizeVerificationResults(nextItems),
+						},
 					},
 				};
 			});
@@ -2237,15 +2232,16 @@ const App = () => {
 		isActionPending,
 		loadSites,
 		pushNotice,
-		siteVerificationReport,
-		summarizeVerificationResults,
 		startAction,
+		siteTaskReports,
 	]);
 
 	const requestDisableAllFailedSites = useCallback(() => {
-		const report = siteVerificationReport;
+		const report = siteTaskReports["verify-active"];
 		const failedItems =
-			report?.report.items.filter((item) => item.verdict === "failed") ?? [];
+			report?.kind === "verify-active"
+				? report.report.items.filter((item) => item.verdict === "failed")
+				: [];
 		if (!report || failedItems.length === 0) {
 			pushNotice("info", "当前没有可禁用的失败站点");
 			return;
@@ -2263,12 +2259,7 @@ const App = () => {
 			tone: "error",
 			onConfirm: () => handleDisableAllFailedSites(),
 		});
-	}, [
-		handleDisableAllFailedSites,
-		openConfirm,
-		pushNotice,
-		siteVerificationReport,
-	]);
+	}, [handleDisableAllFailedSites, openConfirm, pushNotice, siteTaskReports]);
 
 	const handleTokenDelete = useCallback(
 		async (id: string) => {
@@ -2416,8 +2407,16 @@ const App = () => {
 				method: "POST",
 			});
 			await loadSites();
-			setCheckinSummary(result.summary);
-			setCheckinLastRun(result.runs_at);
+			storeSiteTaskReport({
+				kind: "checkin",
+				runs_at: result.runs_at,
+				summary: result.summary,
+				items: result.results,
+			});
+			if (result.summary.total === 0) {
+				pushNotice("info", "当前没有开启签到的站点");
+				return;
+			}
 			pushNotice(
 				result.summary.failed > 0 ? "warning" : "success",
 				result.summary.failed > 0
@@ -2436,6 +2435,87 @@ const App = () => {
 		loadSites,
 		pushNotice,
 		startAction,
+		storeSiteTaskReport,
+	]);
+
+	const handleRefreshSite = useCallback(
+		async (site: Site) => {
+			const actionKey = buildActionKey("site:refresh", site.id);
+			if (isActionPending(actionKey)) {
+				return;
+			}
+			startAction(actionKey);
+			try {
+				const result = await apiFetch<
+					SiteChannelRefreshBatchReport["items"][number]
+				>(`/api/sites/${site.id}/refresh`, {
+					method: "POST",
+				});
+				await loadSites();
+				syncRefreshTaskItem(result, new Date().toISOString());
+				pushNotice(
+					result.status === "success" ? "success" : "warning",
+					`${site.name || "站点"}：${result.message}`,
+				);
+			} catch (error) {
+				pushNotice("error", (error as Error).message);
+			} finally {
+				endAction(actionKey);
+			}
+		},
+		[
+			apiFetch,
+			endAction,
+			isActionPending,
+			loadSites,
+			pushNotice,
+			startAction,
+			syncRefreshTaskItem,
+		],
+	);
+
+	const handleRefreshActiveSites = useCallback(async () => {
+		const actionKey = buildActionKey("site:refreshAll");
+		if (isActionPending(actionKey)) {
+			return;
+		}
+		startAction(actionKey);
+		try {
+			const report = await apiFetch<SiteChannelRefreshBatchReport>(
+				"/api/sites/refresh-active",
+				{
+					method: "POST",
+				},
+			);
+			await loadSites();
+			storeSiteTaskReport({
+				kind: "refresh-active",
+				runs_at: report.runs_at,
+				report,
+			});
+			if (report.summary.total === 0) {
+				pushNotice("info", "当前没有启用渠道可更新");
+				return;
+			}
+			pushNotice(
+				report.summary.failed > 0 ? "warning" : "success",
+				report.summary.failed > 0
+					? `更新完成，失败 ${report.summary.failed} 个。`
+					: "更新完成。",
+			);
+		} catch (error) {
+			pushNotice("error", (error as Error).message);
+		} finally {
+			endAction(actionKey);
+		}
+	}, [
+		apiFetch,
+		endAction,
+		isActionPending,
+		loadSites,
+		pushNotice,
+		startAction,
+		storeSiteTaskReport,
 	]);
 
 	const handleUsageRefresh = useCallback(async () => {
@@ -2564,8 +2644,7 @@ const App = () => {
 					pagedSites={pagedSites}
 					editingSite={editingSite}
 					isSiteModalOpen={isSiteModalOpen}
-					summary={checkinSummary}
-					lastRun={checkinLastRun}
+					taskReports={siteTaskReports}
 					siteSearch={siteSearch}
 					siteSort={siteSort}
 					isActionPending={isActionPending}
@@ -2575,6 +2654,7 @@ const App = () => {
 					onSubmit={handleSiteSubmit}
 					onVerify={handleSiteVerify}
 					onCheckin={handleCheckinRunSite}
+					onRefreshSite={handleRefreshSite}
 					onToggle={handleSiteToggle}
 					onDelete={requestSiteDelete}
 					onPageChange={handleSitePageChange}
@@ -2585,12 +2665,9 @@ const App = () => {
 					onRunAll={handleCheckinRunAll}
 					onVerifyAll={handleSiteVerifyAll}
 					onEvaluateRecovery={handleSiteRecoveryEvaluate}
-					failureCount={
-						siteVerificationReport?.report.items.filter(
-							(item) => item.verdict === "failed",
-						).length ?? 0
-					}
-					onOpenVerificationReport={() => setSiteVerificationReportOpen(true)}
+					onRefreshAll={handleRefreshActiveSites}
+					onDisableFailedSite={handleDisableFailedSite}
+					onDisableAllFailedSites={requestDisableAllFailedSites}
 				/>
 			);
 		}
@@ -2811,126 +2888,6 @@ const App = () => {
 								onClick={closeSiteVerificationDialog}
 							>
 								关闭
-							</Button>
-						</DialogFooter>
-					</DialogContent>
-				</Dialog>
-			)}
-			{siteVerificationReport && (
-				<Dialog
-					open={isSiteVerificationReportOpen}
-					onClose={closeSiteVerificationReport}
-				>
-					<DialogContent
-						aria-labelledby="site-verification-report-title"
-						aria-modal="true"
-						class="max-w-4xl"
-					>
-						<DialogHeader>
-							<div>
-								<DialogTitle id="site-verification-report-title">
-									{siteVerificationReport.title}
-								</DialogTitle>
-								<DialogDescription>
-									{siteVerificationReport.description}
-									。可服务 {siteVerificationReport.report.summary.serving} /
-									部分异常 {siteVerificationReport.report.summary.degraded} /
-									不可服务 {siteVerificationReport.report.summary.failed} /
-									可恢复 {siteVerificationReport.report.summary.recoverable}
-								</DialogDescription>
-							</div>
-							<Button
-								size="sm"
-								type="button"
-								onClick={closeSiteVerificationReport}
-							>
-								关闭
-							</Button>
-						</DialogHeader>
-						<div class="mt-3 max-h-[55vh] space-y-3 overflow-y-auto">
-							{siteVerificationReport.report.items.length === 0 ? (
-								<div class="rounded-xl border border-white/60 bg-white/70 px-4 py-4 text-sm text-[color:var(--app-ink-muted)]">
-									当前没有可展示的验证结果。
-								</div>
-							) : (
-								<div class="space-y-2">
-									{siteVerificationReport.report.items.map((item) => (
-										<div
-											class="grid gap-3 rounded-xl border border-white/60 bg-white/80 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)_auto]"
-											key={item.site_id}
-										>
-											<div class="min-w-0">
-												<p class="truncate text-sm font-semibold text-[color:var(--app-ink)]">
-													{item.site_name}
-												</p>
-												<p class="truncate text-[11px] text-[color:var(--app-ink-muted)]">
-													ID: {item.site_id}
-												</p>
-												<p class="truncate text-[11px] text-[color:var(--app-ink-muted)]">
-													结论：{getVerificationVerdictLabel(item.verdict)}
-												</p>
-											</div>
-											<div class="space-y-1">
-												<p class="text-xs text-[color:var(--app-ink)]">
-													{getPrimaryVerificationIssue(item)}
-												</p>
-												<p class="text-[11px] text-[color:var(--app-ink-muted)]">
-													建议：{getSuggestedActionLabel(item.suggested_action)}
-												</p>
-											</div>
-											<div class="flex flex-wrap items-center justify-end gap-2">
-												<Button
-													size="sm"
-													type="button"
-													class="h-8 px-3 text-xs"
-													disabled={isActionPending(
-														buildActionKey("site:verify", item.site_id),
-													)}
-													onClick={() => handleSiteVerify(item.site_id)}
-												>
-													重新验证
-												</Button>
-												<Button
-													size="sm"
-													type="button"
-													variant="danger"
-													class="h-8 px-3 text-xs"
-													disabled={isActionPending(
-														buildActionKey("site:disableFailed", item.site_id),
-													)}
-													onClick={() => handleDisableFailedSite(item)}
-												>
-													禁用
-												</Button>
-											</div>
-										</div>
-									))}
-								</div>
-							)}
-						</div>
-						<DialogFooter>
-							<Button
-								size="sm"
-								type="button"
-								onClick={closeSiteVerificationReport}
-							>
-								关闭
-							</Button>
-							<Button
-								size="sm"
-								type="button"
-								variant="danger"
-								disabled={
-									siteVerificationReport.report.items.filter(
-										(item) => item.verdict === "failed",
-									).length === 0 ||
-									isActionPending(buildActionKey("site:disableFailedAll"))
-								}
-								onClick={requestDisableAllFailedSites}
-							>
-								{isActionPending(buildActionKey("site:disableFailedAll"))
-									? "禁用中..."
-									: "禁用全部失败站点"}
 							</Button>
 						</DialogFooter>
 					</DialogContent>
